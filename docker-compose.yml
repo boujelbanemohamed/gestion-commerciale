@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  postgres_gestion:
+    image: postgres:15-alpine
+    container_name: gestion_commerciale_db
+    environment:
+      POSTGRES_DB: ${DB_NAME:-gestion_commerciale}
+      POSTGRES_USER: ${DB_USER:-gestion_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme_db_password}
+    ports:
+      - "${DB_PORT:-5433}:5432"  # Port modifié pour éviter conflits
+    volumes:
+      - gestion_postgres_data:/var/lib/postgresql/data
+      - ./init_sql.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - gestion_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-gestion_user} -d ${DB_NAME:-gestion_commerciale}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Limites de ressources pour ne pas impacter les autres apps
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  backend_gestion:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gestion_commerciale_backend
+    ports:
+      - "${BACKEND_PORT:-5001}:5000"  # Port externe modifié
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DB_HOST: postgres_gestion
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-gestion_commerciale}
+      DB_USER: ${DB_USER:-gestion_user}
+      DB_PASSWORD: ${DB_PASSWORD:-changeme_db_password}
+      JWT_SECRET: ${JWT_SECRET:-changeme_jwt_secret_production}
+      PORT: 5000
+    depends_on:
+      postgres_gestion:
+        condition: service_healthy
+    networks:
+      - gestion_network
+    restart: unless-stopped
+    volumes:
+      - ./backend/logs:/app/logs
+      - gestion_uploads:/app/uploads
+    # Limites de ressources
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    # Healthcheck pour le backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend_gestion:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - REACT_APP_API_URL=${REACT_APP_API_URL:-http://localhost:5001/api}
+    container_name: gestion_commerciale_frontend
+    ports:
+      - "${FRONTEND_PORT:-3001}:80"  # Port externe modifié
+    depends_on:
+      backend_gestion:
+        condition: service_healthy
+    networks:
+      - gestion_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    # Limites de ressources
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+volumes:
+  gestion_postgres_data:
+    name: gestion_commerciale_postgres_data
+    driver: local
+  gestion_uploads:
+    name: gestion_commerciale_uploads
+    driver: local
+
+networks:
+  gestion_network:
+    name: gestion_commerciale_network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16  # Sous-réseau ajusté pour éviter conflits

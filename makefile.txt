@@ -1,0 +1,118 @@
+.PHONY: help build up down restart logs clean db-connect install
+
+# Couleurs pour l'affichage
+BLUE := \033[0;34m
+GREEN := \033[0;32m
+YELLOW := \033[0;33m
+NC := \033[0m # No Color
+
+help: ## Affiche cette aide
+	@echo "$(BLUE)╔═══════════════════════════════════════════╗$(NC)"
+	@echo "$(BLUE)║  Gestion Commerciale - Commandes Make   ║$(NC)"
+	@echo "$(BLUE)╚═══════════════════════════════════════════╝$(NC)"
+	@echo ""
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(GREEN)%-20s$(NC) %s\n", $$1, $$2}'
+	@echo ""
+
+install: ## Installation initiale (création des dossiers)
+	@echo "$(YELLOW)📦 Installation de la structure...$(NC)"
+	@mkdir -p backend frontend/src frontend/public
+	@echo "$(GREEN)✅ Structure créée$(NC)"
+
+build: ## Construire tous les services
+	@echo "$(YELLOW)🔨 Construction des services...$(NC)"
+	@docker-compose build
+	@echo "$(GREEN)✅ Construction terminée$(NC)"
+
+up: ## Démarrer l'application
+	@echo "$(YELLOW)🚀 Démarrage de l'application...$(NC)"
+	@docker-compose up -d
+	@echo "$(GREEN)✅ Application démarrée$(NC)"
+	@echo ""
+	@echo "$(BLUE)📱 Frontend:$(NC) http://localhost:3000"
+	@echo "$(BLUE)🔌 API:$(NC)      http://localhost:5000/api"
+	@echo ""
+
+dev: ## Démarrer en mode développement (avec logs)
+	@echo "$(YELLOW)🔧 Démarrage en mode développement...$(NC)"
+	@docker-compose up
+
+stop: ## Arrêter l'application
+	@echo "$(YELLOW)⏸️  Arrêt de l'application...$(NC)"
+	@docker-compose stop
+	@echo "$(GREEN)✅ Application arrêtée$(NC)"
+
+down: ## Arrêter et supprimer les conteneurs
+	@echo "$(YELLOW)🗑️  Suppression des conteneurs...$(NC)"
+	@docker-compose down
+	@echo "$(GREEN)✅ Conteneurs supprimés$(NC)"
+
+restart: ## Redémarrer l'application
+	@echo "$(YELLOW)♻️  Redémarrage...$(NC)"
+	@make down
+	@make up
+
+rebuild: ## Reconstruire et redémarrer
+	@echo "$(YELLOW)🔄 Reconstruction complète...$(NC)"
+	@make down
+	@make build
+	@make up
+
+logs: ## Voir les logs en temps réel
+	@docker-compose logs -f
+
+logs-backend: ## Voir les logs du backend
+	@docker-compose logs -f backend
+
+logs-frontend: ## Voir les logs du frontend
+	@docker-compose logs -f frontend
+
+logs-db: ## Voir les logs de la base de données
+	@docker-compose logs -f postgres
+
+ps: ## Voir l'état des services
+	@docker-compose ps
+
+db-connect: ## Se connecter à PostgreSQL
+	@echo "$(BLUE)🗄️  Connexion à PostgreSQL...$(NC)"
+	@docker exec -it gestion_db psql -U admin -d gestion_commerciale
+
+db-reset: ## Réinitialiser la base de données
+	@echo "$(YELLOW)⚠️  Réinitialisation de la base de données...$(NC)"
+	@docker-compose down -v
+	@docker-compose up -d postgres
+	@sleep 5
+	@docker-compose up -d backend frontend
+	@echo "$(GREEN)✅ Base de données réinitialisée$(NC)"
+
+clean: ## Nettoyer complètement (conteneurs + volumes + images)
+	@echo "$(YELLOW)🧹 Nettoyage complet...$(NC)"
+	@docker-compose down -v --rmi all
+	@echo "$(GREEN)✅ Nettoyage terminé$(NC)"
+
+shell-backend: ## Accéder au shell du backend
+	@docker exec -it gestion_backend sh
+
+shell-frontend: ## Accéder au shell du frontend
+	@docker exec -it gestion_frontend sh
+
+status: ## Afficher le statut complet
+	@echo "$(BLUE)╔═══════════════════════════════════════════╗$(NC)"
+	@echo "$(BLUE)║         État de l'Application            ║$(NC)"
+	@echo "$(BLUE)╚═══════════════════════════════════════════╝$(NC)"
+	@echo ""
+	@docker-compose ps
+	@echo ""
+	@echo "$(BLUE)📊 Statistiques Docker:$(NC)"
+	@docker stats --no-stream gestion_frontend gestion_backend gestion_db 2>/dev/null || echo "Services non démarrés"
+
+test-api: ## Tester l'API
+	@echo "$(BLUE)🧪 Test de l'API...$(NC)"
+	@curl -s http://localhost:5000/api | jq . || echo "API non disponible"
+
+backup-db: ## Sauvegarder la base de données
+	@echo "$(YELLOW)💾 Sauvegarde de la base de données...$(NC)"
+	@docker exec gestion_db pg_dump -U admin gestion_commerciale > backup_$(shell date +%Y%m%d_%H%M%S).sql
+	@echo "$(GREEN)✅ Sauvegarde créée$(NC)"
+
+default: help
