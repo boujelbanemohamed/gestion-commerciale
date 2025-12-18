@@ -1,0 +1,6 @@
+ALTER TABLE clients
+  ADD COLUMN IF NOT EXISTS logo_file_path VARCHAR(500),
+  ADD COLUMN IF NOT EXISTS logo_url TEXT;
+
+
+

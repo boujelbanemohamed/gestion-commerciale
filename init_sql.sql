@@ -7,6 +7,9 @@ CREATE TABLE IF NOT EXISTS users (
     password VARCHAR(255) NOT NULL,
     name VARCHAR(255) NOT NULL,
     role VARCHAR(50) DEFAULT 'admin',
+    signature_text TEXT,
+    signature_file_path VARCHAR(500),
+    signature_link TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -22,6 +25,8 @@ CREATE TABLE IF NOT EXISTS clients (
     city VARCHAR(100) NOT NULL,
     postal_code VARCHAR(20) NOT NULL,
     country VARCHAR(100) NOT NULL DEFAULT 'France',
+    logo_file_path VARCHAR(500),
+    logo_url TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -89,6 +94,8 @@ CREATE TABLE IF NOT EXISTS quotes (
     total_vat DECIMAL(10,2) DEFAULT 0,
     total_ttc DECIMAL(10,2) DEFAULT 0,
     notes TEXT,
+    first_page_text TEXT,
+    introduction_text TEXT,
     currency_id INTEGER REFERENCES currencies(id) ON DELETE SET NULL,
     conditions_generales TEXT,
     global_discount_percent DECIMAL(5,2) DEFAULT 0,

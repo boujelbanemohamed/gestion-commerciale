@@ -39,6 +39,15 @@ server {
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
     }
+
+    # Proxy des fichiers statiques servis par le backend (signatures, pièces jointes, etc.)
+    location /uploads {
+        proxy_pass http://backend_gestion:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
 }
 EOF
 

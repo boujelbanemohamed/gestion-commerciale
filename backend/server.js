@@ -30,16 +30,28 @@ pool.query('SELECT NOW()', (err, res) => {
   }
 });
 
-// Créer le dossier pour les uploads s'il n'existe pas
-const uploadsDir = path.join(__dirname, 'uploads', 'quotes');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+// Créer les dossiers pour les uploads s'ils n'existent pas
+const uploadsQuotesDir = path.join(__dirname, 'uploads', 'quotes');
+if (!fs.existsSync(uploadsQuotesDir)) {
+  fs.mkdirSync(uploadsQuotesDir, { recursive: true });
 }
 
-// Configuration Multer pour les uploads
+// Dossier pour les signatures utilisateurs
+const userSignaturesDir = path.join(__dirname, 'uploads', 'user_signatures');
+if (!fs.existsSync(userSignaturesDir)) {
+  fs.mkdirSync(userSignaturesDir, { recursive: true });
+}
+
+// Dossier pour les logos clients
+const clientLogosDir = path.join(__dirname, 'uploads', 'client_logos');
+if (!fs.existsSync(clientLogosDir)) {
+  fs.mkdirSync(clientLogosDir, { recursive: true });
+}
+
+// Configuration Multer pour les uploads de pièces jointes de devis
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, uploadsDir);
+    cb(null, uploadsQuotesDir);
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -54,12 +66,51 @@ const upload = multer({
   }
 });
 
+// Storage pour les signatures utilisateurs
+const userSignatureStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, userSignaturesDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'signature-' + (req.body.userId || 'unknown') + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const uploadUserSignature = multer({
+  storage: userSignatureStorage,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB max
+  }
+});
+
+// Storage pour les logos clients
+const clientLogoStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, clientLogosDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'client-logo-' + (req.params.id || 'unknown') + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const uploadClientLogo = multer({
+  storage: clientLogoStorage,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB max
+  }
+});
+
 // Middleware
 app.use(helmet());
 app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Servir les fichiers statiques (signatures, pièces jointes, etc.)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Middleware pour attacher pool à req
 app.use((req, res, next) => {
@@ -122,7 +173,7 @@ app.get('/api/auth/profile', async (req, res) => {
     }
     
     const result = await pool.query(
-      'SELECT id, email, name, role, created_at, updated_at FROM users WHERE id = $1',
+      'SELECT id, email, name, role, signature_text, signature_file_path, signature_link, created_at, updated_at FROM users WHERE id = $1',
       [userId]
     );
     
@@ -136,6 +187,9 @@ app.get('/api/auth/profile', async (req, res) => {
       email: user.email,
       name: user.name,
       role: (user.role || 'lecteur').toLowerCase(),
+      signature_text: user.signature_text || null,
+      signature_file_path: user.signature_file_path || null,
+      signature_link: user.signature_link || null,
       created_at: user.created_at,
       updated_at: user.updated_at
     });
@@ -148,7 +202,7 @@ app.get('/api/auth/profile', async (req, res) => {
 // Route pour mettre à jour le profil de l'utilisateur connecté
 app.put('/api/auth/profile', async (req, res) => {
   try {
-    const { userId, name, email, password } = req.body;
+    const { userId, name, email, password, signature_text, signature_link } = req.body;
     
     if (!userId) {
       return res.status(400).json({ error: 'ID utilisateur requis' });
@@ -187,6 +241,14 @@ app.put('/api/auth/profile', async (req, res) => {
       updates.push(`name = $${paramIndex++}`);
       values.push(name);
     }
+    if (typeof signature_text !== 'undefined') {
+      updates.push(`signature_text = $${paramIndex++}`);
+      values.push(signature_text);
+    }
+    if (typeof signature_link !== 'undefined') {
+      updates.push(`signature_link = $${paramIndex++}`);
+      values.push(signature_link);
+    }
     
     if (updates.length === 0) {
       return res.status(400).json({ error: 'Aucune donnée à mettre à jour' });
@@ -196,7 +258,7 @@ app.put('/api/auth/profile', async (req, res) => {
     values.push(userId);
     
     const result = await pool.query(
-      `UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING id, email, name, role, created_at, updated_at`,
+      `UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING id, email, name, role, signature_text, signature_file_path, signature_link, created_at, updated_at`,
       values
     );
     
@@ -205,6 +267,9 @@ app.put('/api/auth/profile', async (req, res) => {
       email: result.rows[0].email,
       name: result.rows[0].name,
       role: (result.rows[0].role || 'lecteur').toLowerCase(),
+      signature_text: result.rows[0].signature_text || null,
+      signature_file_path: result.rows[0].signature_file_path || null,
+      signature_link: result.rows[0].signature_link || null,
       created_at: result.rows[0].created_at,
       updated_at: result.rows[0].updated_at
     });
@@ -213,6 +278,69 @@ app.put('/api/auth/profile', async (req, res) => {
     if (error.code === '23505') {
       return res.status(400).json({ error: 'Cet email est déjà utilisé' });
     }
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Route pour uploader la signature de l'utilisateur connecté
+app.post('/api/auth/profile/signature', uploadUserSignature.single('file'), async (req, res) => {
+  try {
+    const { userId, signature_text, signature_link } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'ID utilisateur requis' });
+    }
+
+    // Vérifier que l'utilisateur existe
+    const existingUser = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
+    if (existingUser.rows.length === 0) {
+      return res.status(404).json({ error: 'Utilisateur non trouvé' });
+    }
+
+    const updates = [];
+    const values = [];
+    let paramIndex = 1;
+
+    if (typeof signature_text !== 'undefined') {
+      updates.push(`signature_text = $${paramIndex++}`);
+      values.push(signature_text);
+    }
+    if (typeof signature_link !== 'undefined') {
+      updates.push(`signature_link = $${paramIndex++}`);
+      values.push(signature_link);
+    }
+
+    if (req.file) {
+      const relativePath = path.relative(__dirname, req.file.path);
+      updates.push(`signature_file_path = $${paramIndex++}`);
+      values.push(relativePath);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'Aucune donnée de signature fournie' });
+    }
+
+    updates.push(`updated_at = CURRENT_TIMESTAMP`);
+    values.push(userId);
+
+    const result = await pool.query(
+      `UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING id, email, name, role, signature_text, signature_file_path, signature_link, created_at, updated_at`,
+      values
+    );
+
+    res.json({
+      id: result.rows[0].id,
+      email: result.rows[0].email,
+      name: result.rows[0].name,
+      role: (result.rows[0].role || 'lecteur').toLowerCase(),
+      signature_text: result.rows[0].signature_text || null,
+      signature_file_path: result.rows[0].signature_file_path || null,
+      signature_link: result.rows[0].signature_link || null,
+      created_at: result.rows[0].created_at,
+      updated_at: result.rows[0].updated_at
+    });
+  } catch (error) {
+    console.error('Erreur upload signature utilisateur:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
@@ -430,13 +558,13 @@ app.post('/api/clients', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { name, email, phone, matricule_fiscal, address, city, postal_code, country, contacts } = req.body;
+    const { name, email, phone, matricule_fiscal, address, city, postal_code, country, contacts, logo_url } = req.body;
     
     // Créer le client
     const result = await client.query(
-      `INSERT INTO clients (name, email, phone, matricule_fiscal, address, city, postal_code, country) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [name, email, phone || null, matricule_fiscal || null, address, city, postal_code, country]
+      `INSERT INTO clients (name, email, phone, matricule_fiscal, address, city, postal_code, country, logo_url) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [name, email, phone || null, matricule_fiscal || null, address, city, postal_code, country, logo_url || null]
     );
     
     const clientId = result.rows[0].id;
@@ -482,15 +610,15 @@ app.put('/api/clients/:id', async (req, res) => {
   try {
     await client.query('BEGIN');
     const { id } = req.params;
-    const { name, email, phone, matricule_fiscal, address, city, postal_code, country, contacts } = req.body;
+    const { name, email, phone, matricule_fiscal, address, city, postal_code, country, contacts, logo_url } = req.body;
     
     // Mettre à jour le client
     const result = await client.query(
       `UPDATE clients 
        SET name = $1, email = $2, phone = $3, matricule_fiscal = $4, address = $5, 
-           city = $6, postal_code = $7, country = $8, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $9 RETURNING *`,
-      [name, email, phone || null, matricule_fiscal || null, address, city, postal_code, country, id]
+           city = $6, postal_code = $7, country = $8, logo_url = $9, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $10 RETURNING *`,
+      [name, email, phone || null, matricule_fiscal || null, address, city, postal_code, country, logo_url || null, id]
     );
     
     if (result.rows.length === 0) {
@@ -549,6 +677,49 @@ app.delete('/api/clients/:id', async (req, res) => {
     res.json({ message: 'Client supprimé avec succès' });
   } catch (error) {
     console.error('Erreur suppression client:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Upload du logo client (fichier)
+app.post('/api/clients/:id/logo', uploadClientLogo.single('file'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Vérifier que le client existe
+    const existingClient = await pool.query('SELECT id FROM clients WHERE id = $1', [id]);
+    if (existingClient.rows.length === 0) {
+      return res.status(404).json({ error: 'Client non trouvé' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'Aucun fichier fourni' });
+    }
+
+    const relativePath = path.relative(__dirname, req.file.path);
+
+    const result = await pool.query(
+      `UPDATE clients 
+       SET logo_file_path = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2
+       RETURNING *`,
+      [relativePath, id]
+    );
+
+    // Retourner le client mis à jour avec ses contacts
+    const clientWithContacts = await pool.query(
+      `SELECT c.*, 
+              COALESCE(json_agg(cc.*) FILTER (WHERE cc.id IS NOT NULL), '[]') as contacts
+       FROM clients c
+       LEFT JOIN client_contacts cc ON c.id = cc.client_id
+       WHERE c.id = $1
+       GROUP BY c.id`,
+      [id]
+    );
+
+    res.json(clientWithContacts.rows[0]);
+  } catch (error) {
+    console.error('Erreur upload logo client:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
@@ -665,9 +836,14 @@ app.delete('/api/products/:id', async (req, res) => {
 app.get('/api/quotes', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT q.*, c.name as client_name
+      SELECT 
+        q.*, 
+        c.name as client_name,
+        curr.code as currency_code,
+        curr.symbol as currency_symbol
       FROM quotes q
       LEFT JOIN clients c ON q.client_id = c.id
+      LEFT JOIN currencies curr ON q.currency_id = curr.id
       ORDER BY q.created_at DESC
     `);
     res.json(result.rows);
@@ -751,20 +927,26 @@ app.post('/api/quotes', async (req, res) => {
     await client.query('BEGIN');
     
     const { 
+      quote_number,
       client_id, 
       date, 
       valid_until, 
       status,
       currency_id,
       conditions_generales,
+      first_page_text,
+      introduction_text,
       global_discount_percent,
       items 
     } = req.body;
     
-    // Générer un numéro de devis unique
-    const countResult = await client.query('SELECT COUNT(*) FROM quotes');
-    const count = parseInt(countResult.rows[0].count) + 1;
-    const quoteNumber = `DEV-${String(count).padStart(6, '0')}`;
+    // Utiliser le numéro fourni ou en générer un automatiquement
+    let quoteNumber = (quote_number || '').trim();
+    if (!quoteNumber) {
+      const countResult = await client.query('SELECT COUNT(*) FROM quotes');
+      const count = parseInt(countResult.rows[0].count) + 1;
+      quoteNumber = `DEV-${String(count).padStart(6, '0')}`;
+    }
     
     // Calculer les totaux
     let totalHTAvantRemise = 0;
@@ -799,9 +981,9 @@ app.post('/api/quotes', async (req, res) => {
     const result = await client.query(
       `INSERT INTO quotes (
         quote_number, client_id, date, valid_until, status, 
-        currency_id, conditions_generales, global_discount_percent,
+        currency_id, conditions_generales, first_page_text, introduction_text, global_discount_percent,
         total_ht, total_vat, total_ttc
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
       [
         quoteNumber, 
         client_id, 
@@ -810,6 +992,8 @@ app.post('/api/quotes', async (req, res) => {
         status || 'pending',
         currency_id || null,
         conditions_generales || null,
+        first_page_text || null,
+        introduction_text || null,
         remiseGlobale,
         totalHTApresRemise,
         totalTVA,
@@ -886,6 +1070,10 @@ app.post('/api/quotes', async (req, res) => {
     });
   } catch (error) {
     await client.query('ROLLBACK');
+    // Gérer l'unicité du numéro de devis
+    if (error.code === '23505') {
+      return res.status(400).json({ error: 'Ce numéro de devis est déjà utilisé' });
+    }
     console.error('Erreur création devis:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   } finally {
@@ -900,12 +1088,15 @@ app.put('/api/quotes/:id', async (req, res) => {
     
     const { id } = req.params;
     const { 
+      quote_number,
       client_id, 
       date, 
       valid_until, 
       status,
       currency_id,
       conditions_generales,
+      first_page_text,
+      introduction_text,
       global_discount_percent,
       items 
     } = req.body;
@@ -952,17 +1143,21 @@ app.put('/api/quotes/:id', async (req, res) => {
     // Mettre à jour le devis
     await client.query(
       `UPDATE quotes SET
-        client_id = $1, date = $2, valid_until = $3, status = $4,
-        currency_id = $5, conditions_generales = $6, global_discount_percent = $7,
-        total_ht = $8, total_vat = $9, total_ttc = $10, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $11`,
+        quote_number = COALESCE(NULLIF($1, ''), quote_number),
+        client_id = $2, date = $3, valid_until = $4, status = $5,
+        currency_id = $6, conditions_generales = $7, first_page_text = $8, introduction_text = $9, global_discount_percent = $10,
+        total_ht = $11, total_vat = $12, total_ttc = $13, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $14`,
       [
+        (quote_number || '').trim(),
         client_id, 
         date, 
         valid_until, 
         status || 'pending',
         currency_id || null,
         conditions_generales || null,
+        first_page_text || null,
+        introduction_text || null,
         remiseGlobale,
         totalHTApresRemise,
         totalTVA,
@@ -1041,6 +1236,9 @@ app.put('/api/quotes/:id', async (req, res) => {
     });
   } catch (error) {
     await client.query('ROLLBACK');
+    if (error.code === '23505') {
+      return res.status(400).json({ error: 'Ce numéro de devis est déjà utilisé' });
+    }
     console.error('Erreur modification devis:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   } finally {
@@ -1071,7 +1269,11 @@ app.delete('/api/quotes/:id', async (req, res) => {
 app.post('/api/quotes/:id/send-email', async (req, res) => {
   try {
     const { id } = req.params;
-    const { recipientEmail } = req.body;
+    const { recipientEmails, message } = req.body;
+    
+    if (!Array.isArray(recipientEmails) || recipientEmails.length === 0) {
+      return res.status(400).json({ error: 'Aucun destinataire fourni' });
+    }
     
     // Récupérer le devis avec toutes ses informations
     const quoteResult = await pool.query(`
@@ -1132,6 +1334,11 @@ app.post('/api/quotes/:id/send-email', async (req, res) => {
       `;
     });
     
+    // Message personnalisé (s'il existe)
+    const customMessageHTML = message
+      ? `<p style="margin-bottom: 20px; white-space: pre-line;">${message.replace(/\n/g, '<br>')}</p>`
+      : '';
+
     const emailHTML = `
       <!DOCTYPE html>
       <html>
@@ -1152,6 +1359,8 @@ app.post('/api/quotes/:id/send-email', async (req, res) => {
         <div class="header">
           <h1>Devis ${quote.quote_number}</h1>
         </div>
+        
+        ${customMessageHTML}
         
         <div class="info">
           <strong>Client:</strong> ${quote.client_name || '-'}<br>
@@ -1187,12 +1396,19 @@ app.post('/api/quotes/:id/send-email', async (req, res) => {
     `;
     
     // Envoyer l'email
+    // Adresse de l'utilisateur connecté mise en copie (si configurée dans SMTP)
+    const ccAddresses = [];
+    if (smtpConfig.cc_current_user && smtpConfig.cc_current_user === 'true' && smtpConfig.current_user_email) {
+      ccAddresses.push(smtpConfig.current_user_email);
+    }
+
     const mailOptions = {
       from: `"${smtpConfig.sender_name || 'Gestion Commerciale'}" <${smtpConfig.sender_email || smtpConfig.user}>`,
-      to: recipientEmail,
+      to: recipientEmails.join(','),
+      cc: ccAddresses.length > 0 ? ccAddresses.join(',') : undefined,
       subject: `Devis ${quote.quote_number}`,
       html: emailHTML,
-      text: `Devis ${quote.quote_number}\n\nClient: ${quote.client_name || '-'}\nDate: ${quote.date || '-'}\nTotal TTC: ${Number(quote.total_ttc || 0).toFixed(2)} ${quote.currency_symbol || '€'}`
+      text: `Devis ${quote.quote_number}\n\nClient: ${quote.client_name || '-'}\nDate: ${quote.date || '-'}\nTotal TTC: ${Number(quote.total_ttc || 0).toFixed(2)} ${quote.currency_symbol || '€'}${message ? `\n\nMessage:\n${message}` : ''}`
     };
     
     await transporter.sendMail(mailOptions);
@@ -1815,33 +2031,134 @@ app.post('/api/config/smtp/test', async (req, res) => {
   }
 });
 
+// ==================== CONFIG MISE EN PAGE ====================
+
+// Récupérer la mise en page (logo + texte pied de page)
+app.get('/api/config/layout', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT config_key, config_value 
+       FROM app_config 
+       WHERE config_key IN ('layout_company_logo_url', 'layout_company_logo_file_path', 'layout_footer_text')`
+    );
+    const config = {};
+    result.rows.forEach(row => {
+      config[row.config_key] = row.config_value;
+    });
+    res.json({
+      logo_url: config['layout_company_logo_url'] || null,
+      logo_file_path: config['layout_company_logo_file_path'] || null,
+      footer_text: config['layout_footer_text'] || ''
+    });
+  } catch (error) {
+    console.error('Erreur récupération config mise en page:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Sauvegarder la mise en page (logo URL + texte pied de page)
+app.post('/api/config/layout', async (req, res) => {
+  try {
+    const { logo_url, footer_text } = req.body;
+
+    const configs = [
+      { key: 'layout_company_logo_url', value: logo_url || null },
+      { key: 'layout_footer_text', value: footer_text || '' }
+    ];
+
+    for (const config of configs) {
+      await pool.query(
+        `INSERT INTO app_config (config_key, config_value, updated_at) 
+         VALUES ($1, $2, CURRENT_TIMESTAMP)
+         ON CONFLICT (config_key) 
+         DO UPDATE SET config_value = $2, updated_at = CURRENT_TIMESTAMP`,
+        [config.key, config.value]
+      );
+    }
+
+    res.json({ message: 'Mise en page enregistrée avec succès' });
+  } catch (error) {
+    console.error('Erreur sauvegarde config mise en page:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Upload du logo de l'entreprise (fichier)
+app.post('/api/config/layout/logo', uploadClientLogo.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Aucun fichier fourni' });
+    }
+
+    const relativePath = path.relative(__dirname, req.file.path);
+
+    await pool.query(
+      `INSERT INTO app_config (config_key, config_value, updated_at) 
+       VALUES ($1, $2, CURRENT_TIMESTAMP)
+       ON CONFLICT (config_key) 
+       DO UPDATE SET config_value = $2, updated_at = CURRENT_TIMESTAMP`,
+      ['layout_company_logo_file_path', relativePath]
+    );
+
+    res.json({
+      message: 'Logo de l\'entreprise mis à jour avec succès',
+      logo_file_path: relativePath
+    });
+  } catch (error) {
+    console.error('Erreur upload logo entreprise:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // ==================== ROUTES STATISTIQUES ====================
 app.get('/api/stats/dashboard', async (req, res) => {
   try {
     const clients = await pool.query('SELECT COUNT(*) FROM clients');
     const products = await pool.query('SELECT COUNT(*) FROM products');
     const quotes = await pool.query('SELECT COUNT(*) FROM quotes WHERE status = \'pending\'');
-    const revenue = await pool.query('SELECT COALESCE(SUM(total_ttc), 0) as total FROM quotes WHERE status = \'accepted\' AND EXTRACT(MONTH FROM date) = EXTRACT(MONTH FROM CURRENT_DATE) AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM CURRENT_DATE)');
+    // CA du mois, ventilé par devise
+    const revenueByCurrency = await pool.query(`
+      SELECT 
+        curr.code as currency_code,
+        curr.symbol as currency_symbol,
+        COALESCE(SUM(q.total_ttc), 0) as total
+      FROM quotes q
+      LEFT JOIN currencies curr ON q.currency_id = curr.id
+      WHERE q.status = 'accepted'
+        AND EXTRACT(MONTH FROM q.date) = EXTRACT(MONTH FROM CURRENT_DATE)
+        AND EXTRACT(YEAR FROM q.date) = EXTRACT(YEAR FROM CURRENT_DATE)
+      GROUP BY curr.code, curr.symbol
+      ORDER BY curr.code
+    `);
     
-    // Statistiques par statut pour le dernier mois (30 derniers jours)
+    // Statistiques par statut et par devise pour le dernier mois (30 derniers jours)
     const quotesByStatus = await pool.query(`
       SELECT 
-        status,
+        q.status,
+        curr.code as currency_code,
+        curr.symbol as currency_symbol,
         COUNT(*) as count,
-        COALESCE(SUM(total_ttc), 0) as total_amount
-      FROM quotes
-      WHERE date >= CURRENT_DATE - INTERVAL '30 days'
-      GROUP BY status
-      ORDER BY status
+        COALESCE(SUM(q.total_ttc), 0) as total_amount
+      FROM quotes q
+      LEFT JOIN currencies curr ON q.currency_id = curr.id
+      WHERE q.date >= CURRENT_DATE - INTERVAL '30 days'
+      GROUP BY q.status, curr.code, curr.symbol
+      ORDER BY q.status, curr.code
     `);
     
     res.json({
       clients: parseInt(clients.rows[0].count),
       products: parseInt(products.rows[0].count),
       quotes_pending: parseInt(quotes.rows[0].count),
-      revenue: parseFloat(revenue.rows[0].total),
+      revenue_by_currency: revenueByCurrency.rows.map(row => ({
+        currency_code: row.currency_code || 'EUR',
+        currency_symbol: row.currency_symbol || '€',
+        total: parseFloat(row.total)
+      })),
       quotes_by_status: quotesByStatus.rows.map(row => ({
         status: row.status,
+        currency_code: row.currency_code || 'EUR',
+        currency_symbol: row.currency_symbol || '€',
         count: parseInt(row.count),
         total_amount: parseFloat(row.total_amount)
       }))
@@ -1859,34 +2176,39 @@ app.get('/api/stats/activity', async (req, res) => {
     
     let query = `
       SELECT 
-        status,
+        q.status,
+        curr.code as currency_code,
+        curr.symbol as currency_symbol,
         COUNT(*) as count,
-        COALESCE(SUM(total_ttc), 0) as total_amount
-      FROM quotes
+        COALESCE(SUM(q.total_ttc), 0) as total_amount
+      FROM quotes q
+      LEFT JOIN currencies curr ON q.currency_id = curr.id
       WHERE 1=1
     `;
     const params = [];
     let paramIndex = 1;
     
     if (start_date) {
-      query += ` AND date >= $${paramIndex}`;
+      query += ` AND q.date >= $${paramIndex}`;
       params.push(start_date);
       paramIndex++;
     }
     
     if (end_date) {
-      query += ` AND date <= $${paramIndex}`;
+      query += ` AND q.date <= $${paramIndex}`;
       params.push(end_date);
       paramIndex++;
     }
     
-    query += ` GROUP BY status ORDER BY status`;
+    query += ` GROUP BY q.status, curr.code, curr.symbol ORDER BY q.status, curr.code`;
     
     const result = await pool.query(query, params);
     
     res.json({
       quotes_by_status: result.rows.map(row => ({
         status: row.status,
+        currency_code: row.currency_code || 'EUR',
+        currency_symbol: row.currency_symbol || '€',
         count: parseInt(row.count),
         total_amount: parseFloat(row.total_amount)
       }))

@@ -187,20 +187,20 @@ export default function App() {
             </NavButton>
             {user?.role && (user.role.toLowerCase() === 'admin' || user.role.toLowerCase() === 'commercial') && (
               <>
-                <NavButton
-                  active={currentPage === 'clients'}
-                  onClick={() => setCurrentPage('clients')}
-                  icon="👥"
-                >
-                  Clients
-                </NavButton>
-                <NavButton
-                  active={currentPage === 'products'}
-                  onClick={() => setCurrentPage('products')}
-                  icon="📦"
-                >
-                  Produits
-                </NavButton>
+            <NavButton
+              active={currentPage === 'clients'}
+              onClick={() => setCurrentPage('clients')}
+              icon="👥"
+            >
+              Clients
+            </NavButton>
+            <NavButton
+              active={currentPage === 'products'}
+              onClick={() => setCurrentPage('products')}
+              icon="📦"
+            >
+              Produits
+            </NavButton>
               </>
             )}
             <NavButton
@@ -225,14 +225,14 @@ export default function App() {
                   icon="👤"
                 >
                   Utilisateurs
-                </NavButton>
-                <NavButton
-                  active={currentPage === 'config'}
-                  onClick={() => setCurrentPage('config')}
-                  icon="⚙️"
-                >
-                  Configuration
-                </NavButton>
+            </NavButton>
+            <NavButton
+              active={currentPage === 'config'}
+              onClick={() => setCurrentPage('config')}
+              icon="⚙️"
+            >
+              Configuration
+            </NavButton>
               </>
             )}
           </nav>
@@ -556,13 +556,26 @@ function Dashboard() {
           icon="📄"
           color="yellow"
         />
+        {Array.isArray(stats?.revenue_by_currency) && stats.revenue_by_currency.length > 0 ? (
+          stats.revenue_by_currency.map((rev, index) => (
+            <StatCard
+              key={rev.currency_code || `currency-${index}`}
+              title={`CA du mois (${rev.currency_code || 'N/A'})`}
+              value={`${(rev.total || 0).toFixed(2)}${rev.currency_symbol || ''}`}
+              subtitle="Devis acceptés"
+              icon="📈"
+              color="purple"
+            />
+          ))
+        ) : (
         <StatCard
           title="CA du mois"
           value={`${(stats?.revenue || 0).toFixed(2)}€`}
-          subtitle="Devis acceptés"
+            subtitle="Devis acceptés"
           icon="📈"
           color="purple"
         />
+        )}
       </div>
 
       <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
@@ -575,6 +588,7 @@ function Dashboard() {
               <thead>
                 <tr className="border-b border-gray-200 dark:border-gray-700">
                   <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Statut</th>
+                  <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Devise</th>
                   <th className="text-right py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Nombre de devis</th>
                   <th className="text-right py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Montant total</th>
                 </tr>
@@ -604,11 +618,14 @@ function Dashboard() {
                           {statusLabels[item.status] || item.status}
                         </span>
                       </td>
+                      <td className="py-3 px-4 text-gray-900 dark:text-white font-medium">
+                        {item.currency_code || 'N/A'} {item.currency_symbol || ''}
+                      </td>
                       <td className="text-right py-3 px-4 text-gray-900 dark:text-white font-medium">
                         {item.count}
                       </td>
                       <td className="text-right py-3 px-4 text-gray-900 dark:text-white font-medium">
-                        {item.total_amount.toFixed(2)}€
+                        {item.total_amount.toFixed(2)} {item.currency_symbol || ''}
                       </td>
                     </tr>
                   );
@@ -621,19 +638,21 @@ function Dashboard() {
                     {stats.quotes_by_status.reduce((sum, item) => sum + item.count, 0)}
                   </td>
                   <td className="text-right py-3 px-4 text-gray-900 dark:text-white">
-                    {stats.quotes_by_status.reduce((sum, item) => sum + item.total_amount, 0).toFixed(2)}€
+                    {stats.quotes_by_status
+                      .reduce((sum, item) => sum + item.total_amount, 0)
+                      .toFixed(2)}
                   </td>
                 </tr>
               </tfoot>
             </table>
           </div>
         ) : (
-          <div className="text-center py-12">
-            <div className="text-6xl mb-4">📊</div>
-            <p className="text-gray-500 dark:text-gray-400">
-              Aucune activité récente pour le moment
-            </p>
-          </div>
+        <div className="text-center py-12">
+          <div className="text-6xl mb-4">📊</div>
+          <p className="text-gray-500 dark:text-gray-400">
+            Aucune activité récente pour le moment
+          </p>
+        </div>
         )}
       </div>
 
@@ -698,6 +717,7 @@ function Dashboard() {
               <thead>
                 <tr className="border-b border-gray-200 dark:border-gray-700">
                   <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Statut</th>
+                  <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Devise</th>
                   <th className="text-right py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Nombre de devis</th>
                   <th className="text-right py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Montant total</th>
                 </tr>
@@ -727,11 +747,14 @@ function Dashboard() {
                           {statusLabels[item.status] || item.status}
                         </span>
                       </td>
+                      <td className="py-3 px-4 text-gray-900 dark:text-white font-medium">
+                        {item.currency_code || 'N/A'} {item.currency_symbol || ''}
+                      </td>
                       <td className="text-right py-3 px-4 text-gray-900 dark:text-white font-medium">
                         {item.count}
                       </td>
                       <td className="text-right py-3 px-4 text-gray-900 dark:text-white font-medium">
-                        {item.total_amount.toFixed(2)}€
+                        {item.total_amount.toFixed(2)} {item.currency_symbol || ''}
                       </td>
                     </tr>
                   );
@@ -744,7 +767,9 @@ function Dashboard() {
                     {activityData.quotes_by_status.reduce((sum, item) => sum + item.count, 0)}
                   </td>
                   <td className="text-right py-3 px-4 text-gray-900 dark:text-white">
-                    {activityData.quotes_by_status.reduce((sum, item) => sum + item.total_amount, 0).toFixed(2)}€
+                    {activityData.quotes_by_status
+                      .reduce((sum, item) => sum + item.total_amount, 0)
+                      .toFixed(2)}
                   </td>
                 </tr>
               </tfoot>
@@ -794,10 +819,16 @@ function ProfilePage({ user, onUpdateUser }) {
     name: '',
     email: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    signature_text: '',
+    signature_link: ''
   });
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
+  const [signaturePreviewUrl, setSignaturePreviewUrl] = useState(null);
+  const [uploadingSignature, setUploadingSignature] = useState(false);
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [signatureType, setSignatureType] = useState('file'); // 'file' ou 'link'
 
   useEffect(() => {
     if (user?.id) {
@@ -814,8 +845,26 @@ function ProfilePage({ user, onUpdateUser }) {
         name: data.name || '',
         email: data.email || '',
         password: '',
-        confirmPassword: ''
+        confirmPassword: '',
+        signature_text: data.signature_text || '',
+        signature_link: data.signature_link || ''
       });
+
+      if (data.signature_file_path) {
+        const baseUrl = API_URL.replace('/api', '');
+        const relativePath = data.signature_file_path.replace(/^uploads[\\/]/, '');
+        setSignaturePreviewUrl(`${baseUrl}/uploads/${relativePath}`);
+      } else {
+        setSignaturePreviewUrl(null);
+      }
+
+      if (data.signature_link) {
+        setSignatureType('link');
+      } else if (data.signature_file_path) {
+        setSignatureType('file');
+      } else {
+        setSignatureType('file');
+      }
     } catch (error) {
       console.error('Erreur chargement profil:', error);
       setError('Erreur lors du chargement du profil');
@@ -840,7 +889,9 @@ function ProfilePage({ user, onUpdateUser }) {
       const updateData = {
         userId: user.id,
         name: formData.name,
-        email: formData.email
+        email: formData.email,
+        signature_text: formData.signature_text,
+        signature_link: formData.signature_link
       };
       
       // Ajouter le mot de passe seulement s'il est fourni
@@ -897,6 +948,50 @@ function ProfilePage({ user, onUpdateUser }) {
       'lecteur': 'Lecteur'
     };
     return labels[role] || role;
+  };
+
+  const handleSignatureUpload = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    setUploadingSignature(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const form = new FormData();
+      form.append('userId', user.id);
+      form.append('file', file);
+      form.append('signature_text', formData.signature_text || '');
+
+      const response = await fetch(`${API_URL}/auth/profile/signature`, {
+        method: 'POST',
+        body: form
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Erreur lors de l\'upload de la signature');
+      }
+
+      setProfile(data);
+      setFormData((prev) => ({
+        ...prev,
+        signature_text: data.signature_text || ''
+      }));
+
+      if (data.signature_file_path) {
+        setSignaturePreviewUrl(`${API_URL.replace('/api', '')}/uploads/${data.signature_file_path.replace(/^uploads[\\/]/, '')}`);
+      }
+
+      setMessage('Signature mise à jour avec succès');
+      setTimeout(() => setMessage(null), 3000);
+    } catch (err) {
+      console.error('Erreur upload signature:', err);
+      setError(err.message || 'Erreur lors de l\'upload de la signature');
+    } finally {
+      setUploadingSignature(false);
+    }
   };
 
   if (loading) {
@@ -1045,9 +1140,185 @@ function ProfilePage({ user, onUpdateUser }) {
                   {formatDate(profile?.updated_at)}
                 </p>
               </div>
+
+              {/* Signature utilisateur */}
+              <div className="pt-4 border-t border-gray-200 dark:border-gray-700 mt-4">
+                <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                  Signature pour les emails / documents
+                </h4>
+
+                <div className="space-y-3">
+                  {/* Choix du type de signature */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Type de signature
+                    </label>
+                    <div className="flex items-center gap-4 text-sm text-gray-700 dark:text-gray-300">
+                      <label className="flex items-center gap-1">
+                        <input
+                          type="radio"
+                          name="signatureType"
+                          value="file"
+                          checked={signatureType === 'file'}
+                          onChange={() => setSignatureType('file')}
+                          className="text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>Fichier (image)</span>
+                      </label>
+                      <label className="flex items-center gap-1">
+                        <input
+                          type="radio"
+                          name="signatureType"
+                          value="link"
+                          checked={signatureType === 'link'}
+                          onChange={() => setSignatureType('link')}
+                          className="text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>Lien (URL)</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Texte de signature
+                    </label>
+                    <textarea
+                      value={formData.signature_text}
+                      onChange={(e) => setFormData({ ...formData, signature_text: e.target.value })}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white text-sm"
+                      placeholder="Exemple : Cordialement,&#10;Nom Prénom&#10;Fonction"
+                    />
+                  </div>
+
+                  {signatureType === 'file' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Fichier de signature (image, max 5 Mo)
+                      </label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleSignatureUpload}
+                        disabled={uploadingSignature}
+                        className="w-full text-sm text-gray-700 dark:text-gray-300"
+                      />
+                      {uploadingSignature && (
+                        <p className="text-xs text-blue-500 mt-1">Upload de la signature en cours...</p>
+                      )}
+                    </div>
+                  )}
+
+                  {signatureType === 'link' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Lien de signature (URL)
+                      </label>
+                      <input
+                        type="url"
+                        value={formData.signature_link}
+                        onChange={(e) => setFormData({ ...formData, signature_link: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white text-sm"
+                        placeholder="https://exemple.com/signature"
+                      />
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Ce lien sera utilisé à la place d'une image de signature.
+                      </p>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setShowSignatureModal(true)}
+                    disabled={
+                      !formData.signature_text &&
+                      ((signatureType === 'file' && !signaturePreviewUrl) ||
+                        (signatureType === 'link' && !formData.signature_link))
+                    }
+                    className="mt-2 px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                  >
+                    Visualiser la signature
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Modal aperçu signature */}
+        {showSignatureModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Signature de l'utilisateur
+                </h3>
+                <button
+                  onClick={() => setShowSignatureModal(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {(!formData.signature_text &&
+                ((signatureType === 'file' && !signaturePreviewUrl) ||
+                  (signatureType === 'link' && !formData.signature_link))) ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Aucune signature définie pour le moment.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {formData.signature_text && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                        Texte de signature
+                      </p>
+                      <p className="text-sm text-gray-900 dark:text-white whitespace-pre-line">
+                        {formData.signature_text}
+                      </p>
+                    </div>
+                  )}
+                  {signatureType === 'link' && formData.signature_link && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                        Signature (image depuis le lien)
+                      </p>
+                      <img
+                        src={formData.signature_link}
+                        alt="Signature utilisateur (lien)"
+                        className="max-h-40 object-contain border border-gray-200 dark:border-gray-700 bg-white mx-auto"
+                      />
+                    </div>
+                  )}
+                  {signatureType === 'file' && signaturePreviewUrl && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                        Fichier de signature
+                      </p>
+                      <img
+                        src={signaturePreviewUrl}
+                        alt="Signature utilisateur"
+                        className="max-h-40 object-contain border border-gray-200 dark:border-gray-700 bg-white mx-auto"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex justify-end mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowSignatureModal(false)}
+                  className="px-4 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  Fermer
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1065,6 +1336,7 @@ function ClientDetailPage({ client, onBack, onUpdate }) {
     city: client.city || '',
     postal_code: client.postal_code || '',
     country: client.country || 'France',
+    logo_url: client.logo_url || '',
     contacts: client.contacts && Array.isArray(client.contacts) ? client.contacts.map(c => ({
       name: c.name || '',
       position: c.position || '',
@@ -1081,6 +1353,70 @@ function ClientDetailPage({ client, onBack, onUpdate }) {
 
   const contacts = client.contacts && Array.isArray(client.contacts) ? client.contacts : [];
   const quotes = client.quotes || [];
+  const [logoType, setLogoType] = useState(client.logo_url ? 'link' : (client.logo_file_path ? 'file' : 'file'));
+
+  const getClientLogoUrl = () => {
+    if (logoType === 'link' && formData.logo_url) {
+      return formData.logo_url;
+    }
+    if (logoType === 'file' && client.logo_file_path) {
+      const baseUrl = API_URL.replace('/api', '');
+      const relativePath = client.logo_file_path.replace(/^uploads[\\/]/, '');
+      return `${baseUrl}/uploads/${relativePath}`;
+    }
+    return null;
+  };
+
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState(getClientLogoUrl());
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    setUploadingLogo(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+
+      const response = await fetch(`${API_URL}/clients/${client.id}/logo`, {
+        method: 'POST',
+        body: form
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Erreur lors de l\'upload du logo');
+      }
+
+      if (onUpdate) {
+        onUpdate(data);
+      }
+
+      if (data.logo_file_path) {
+        const baseUrl = API_URL.replace('/api', '');
+        const relativePath = data.logo_file_path.replace(/^uploads[\\/]/, '');
+        setLogoPreviewUrl(`${baseUrl}/uploads/${relativePath}`);
+      }
+    } catch (error) {
+      console.error('Erreur upload logo client:', error);
+      alert(error.message || 'Erreur lors de l\'upload du logo');
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const getStatusLabel = (status) => {
+    const labels = {
+      pending: 'En attente',
+      created: 'Créé',
+      sent: 'Envoyé',
+      accepted: 'Accepté',
+      rejected: 'Refusé',
+      confirmed: 'Confirmé'
+    };
+    return labels[status] || status;
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -1148,9 +1484,23 @@ function ClientDetailPage({ client, onBack, onUpdate }) {
             Informations générales
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-            Coordonnées et informations de contact
+            Coordonnées, logo et informations de contact
           </p>
           <div className="space-y-4">
+            {/* Logo client */}
+            {(logoPreviewUrl || client.logo_url) && (
+              <div className="flex items-start gap-3">
+                <span className="text-gray-500 dark:text-gray-400 mt-1">🏷️</span>
+                <div>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Logo</p>
+                  <img
+                    src={logoPreviewUrl || client.logo_url}
+                    alt={`Logo de ${client.name}`}
+                    className="h-16 object-contain border border-gray-200 dark:border-gray-700 bg-white rounded"
+                  />
+                </div>
+              </div>
+            )}
             <div className="flex items-start gap-3">
               <span className="text-gray-500 dark:text-gray-400 mt-1">📧</span>
               <div>
@@ -1248,19 +1598,29 @@ function ClientDetailPage({ client, onBack, onUpdate }) {
           ) : (
             <div className="space-y-2">
               {quotes.map((quote) => (
-                <div key={quote.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                <div
+                  key={quote.id}
+                  className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+                >
                   <div>
-                    <p className="font-medium text-gray-900 dark:text-white">{quote.quote_number || `Devis #${quote.id}`}</p>
+                    <p className="font-medium text-gray-900 dark:text-white">
+                      {quote.quote_number || `Devis #${quote.id}`}
+                    </p>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {formatDate(quote.date)} - {quote.total_ttc ? `${Number(quote.total_ttc).toFixed(2)}€` : '-'}
+                      {formatDate(quote.date)}{' '}
+                      {quote.total_ttc
+                        ? `- ${Number(quote.total_ttc).toFixed(2)}${quote.currency_symbol || ''}`
+                        : ''}
                     </p>
                   </div>
-                  <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                  <span
+                    className={`px-2 py-1 rounded-full text-xs font-semibold ${
                     quote.status === 'confirmed' 
                       ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200'
                       : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200'
-                  }`}>
-                    {quote.status || 'pending'}
+                    }`}
+                  >
+                    {getStatusLabel(quote.status || 'pending')}
                   </span>
                 </div>
               ))}
@@ -1355,10 +1715,47 @@ function ClientDetailPage({ client, onBack, onUpdate }) {
                       Ajouter un contact
                     </button>
                   </div>
+
+                  {/* Logo - URL */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      URL du logo (optionnel)
+                    </label>
+                    <input
+                      type="url"
+                      value={formData.logo_url}
+                      onChange={(e) => {
+                        setLogoType('link');
+                        setFormData({ ...formData, logo_url: e.target.value });
+                        setLogoPreviewUrl(e.target.value || getClientLogoUrl());
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                      placeholder="https://exemple.com/logo.png"
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Si une URL est fournie, elle sera utilisée comme logo. Vous pouvez aussi téléverser un fichier ci-contre.
+                    </p>
+                  </div>
                 </div>
 
                 {/* Colonne droite */}
                 <div className="space-y-4">
+                  {/* Logo - fichier */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Fichier logo (image, max 5 Mo)
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleLogoUpload}
+                      disabled={uploadingLogo}
+                      className="w-full text-sm text-gray-700 dark:text-gray-300"
+                    />
+                    {uploadingLogo && (
+                      <p className="text-xs text-blue-500 mt-1">Upload du logo en cours...</p>
+                    )}
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Email *
@@ -3017,7 +3414,7 @@ function ProductsPage() {
             </tbody>
           </table>
         </div>
-        
+
         {filteredProducts.length > 0 && (
           <Pagination
             currentPage={currentPage}
@@ -3327,8 +3724,10 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
   const [filterDateTo, setFilterDateTo] = useState('');
   const [editingQuote, setEditingQuote] = useState(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
-  const [recipientEmail, setRecipientEmail] = useState('');
+  const [recipientEmails, setRecipientEmails] = useState([]); // liste d'emails sélectionnés
   const [emailInputMode, setEmailInputMode] = useState('select'); // 'select' ou 'manual'
+  const [manualEmailInput, setManualEmailInput] = useState(''); // champ de saisie libre (peut contenir plusieurs emails séparés par ;)
+  const [emailMessage, setEmailMessage] = useState(''); // message personnalisé
   const [sendingEmail, setSendingEmail] = useState(false);
   const [notification, setNotification] = useState(null); // { type: 'success' | 'error', message: string }
   const [showAttachmentModal, setShowAttachmentModal] = useState(false);
@@ -3342,20 +3741,47 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
   const [commentText, setCommentText] = useState('');
   const [assignedToUserId, setAssignedToUserId] = useState('');
   const quoteRef = useRef(null);
+  const page1Ref = useRef(null);
+  const page2Ref = useRef(null);
+  const [printClient, setPrintClient] = useState(null);
+  const [userWithSignature, setUserWithSignature] = useState(null);
   const [clients, setClients] = useState([]);
   const [products, setProducts] = useState([]);
   const [currencies, setCurrencies] = useState([]);
+  const [layoutConfig, setLayoutConfig] = useState({
+    logo_url: '',
+    logo_file_path: null,
+    footer_text: ''
+  });
   const [formData, setFormData] = useState({
+    quote_number: '',
     client_id: '',
     date: new Date().toISOString().split('T')[0],
     valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     status: 'pending',
     currency_id: '',
     conditions_generales: '',
+    first_page_text: '',
+    introduction_text: '',
     global_discount_percent: 0,
     global_discount_type: '%'
   });
   const [quoteItems, setQuoteItems] = useState([]);
+
+  // Normalise une date provenant de l'API pour l'affichage dans un input type="date"
+  const formatDateForInput = (value) => {
+    if (!value) return '';
+    // Si c'est déjà au format YYYY-MM-DD, on le garde tel quel
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return value;
+    }
+    // Sinon, on tente de parser et de reformater
+    const d = new Date(value);
+    if (isNaN(d.getTime())) {
+      return '';
+    }
+    return d.toISOString().split('T')[0];
+  };
 
   useEffect(() => {
     loadQuotes();
@@ -3365,6 +3791,26 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
       loadCurrencies();
     }
   }, [showCreatePage, editingQuote]);
+
+  // Charger la configuration de mise en page (logo entreprise + pied de page)
+  useEffect(() => {
+    const loadLayoutConfig = async () => {
+      try {
+        const layout = await api.get('/config/layout');
+        if (layout && Object.keys(layout).length > 0) {
+          setLayoutConfig({
+            logo_url: layout.logo_url || '',
+            logo_file_path: layout.logo_file_path || null,
+            footer_text: layout.footer_text || ''
+          });
+        }
+      } catch (error) {
+        console.error('Erreur chargement mise en page:', error);
+      }
+    };
+
+    loadLayoutConfig();
+  }, []);
 
   // Ouvrir un devis si spécifié (depuis une notification)
   useEffect(() => {
@@ -3443,12 +3889,15 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
 
   const resetForm = () => {
     setFormData({
+      quote_number: '',
       client_id: '',
       date: new Date().toISOString().split('T')[0],
       valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       status: 'pending',
       currency_id: '',
       conditions_generales: '',
+      first_page_text: '',
+      introduction_text: '',
       global_discount_percent: 0,
       global_discount_type: '%'
     });
@@ -3470,6 +3919,31 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
       setSelectedQuote(quote);
       setAttachments(quote.attachments || []);
       setComments(quote.comments || []);
+      setPrintClient(null);
+      // Charger le client du devis pour récupérer le logo
+      if (quote.client_id) {
+        try {
+          const clientData = await api.get(`/clients/${quote.client_id}`);
+          setPrintClient(clientData);
+        } catch (e) {
+          console.error('Erreur chargement client pour le devis:', e);
+        }
+      }
+      // Charger les informations complètes de l'utilisateur avec la signature
+      if (user?.id) {
+        try {
+          const userData = await api.get(`/auth/profile?userId=${user.id}`);
+          setUserWithSignature(userData);
+        } catch (e) {
+          console.error('Erreur chargement utilisateur avec signature:', e);
+          setUserWithSignature(user); // Fallback sur l'utilisateur de base
+        }
+      }
+
+      // Charger les produits pour pouvoir afficher la description dans le détail du devis
+      if (products.length === 0) {
+        loadProducts();
+      }
       setShowDetailPage(true);
       // Charger les utilisateurs si pas déjà chargés
       if (users.length === 0) {
@@ -3593,12 +4067,18 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
       const quote = await api.get(`/quotes/${id}`);
       setEditingQuote(quote);
       setFormData({
+        quote_number: quote.quote_number || '',
         client_id: quote.client_id || '',
-        date: quote.date || new Date().toISOString().split('T')[0],
-        valid_until: quote.valid_until || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        // Utiliser toujours la date/validité initialement saisies, normalisées pour l'input date
+        date: formatDateForInput(quote.date) || new Date().toISOString().split('T')[0],
+        valid_until:
+          formatDateForInput(quote.valid_until) ||
+          new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         status: quote.status || 'pending',
         currency_id: quote.currency_id || '',
         conditions_generales: quote.conditions_generales || '',
+        first_page_text: quote.first_page_text || '',
+        introduction_text: quote.introduction_text || '',
         global_discount_percent: quote.global_discount_percent || 0,
         global_discount_type: '%'
       });
@@ -3670,6 +4150,11 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
     { value: 'confirmed', label: 'Confirmé' }
   ];
 
+  const getStatusLabel = (status) => {
+    const opt = statusOptions.find((s) => s.value === status);
+    return opt ? opt.label : status;
+  };
+
   const handleDeleteQuote = async (id) => {
     if (!window.confirm('Êtes-vous sûr de vouloir supprimer ce devis ?')) {
       return;
@@ -3693,33 +4178,43 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
   };
 
   const handlePrintPDF = async () => {
-    if (!quoteRef.current) return;
+    if (!page1Ref.current || !page2Ref.current) return;
     
     try {
-      const canvas = await html2canvas(quoteRef.current, {
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = 210; // Largeur A4 en mm
+      const pageHeight = 297; // Hauteur A4 en mm
+      const margin = 15; // Marge de 15mm de chaque côté
+      const contentWidth = pageWidth - (margin * 2); // Largeur du contenu avec marges
+      
+      // Capturer la première page
+      const canvas1 = await html2canvas(page1Ref.current, {
         scale: 2,
         useCORS: true,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        logging: false
       });
       
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgData1 = canvas1.toDataURL('image/png');
+      const imgHeight1 = (canvas1.height * contentWidth) / canvas1.width;
       
-      const imgWidth = 210;
-      const pageHeight = 297;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
+      // Ajouter la première page au PDF avec marges
+      pdf.addImage(imgData1, 'PNG', margin, margin, contentWidth, imgHeight1);
       
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
+      // Capturer la deuxième page
+      const canvas2 = await html2canvas(page2Ref.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false
+      });
       
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
+      const imgData2 = canvas2.toDataURL('image/png');
+      const imgHeight2 = (canvas2.height * contentWidth) / canvas2.width;
+      
+      // Ajouter la deuxième page au PDF avec marges
         pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-      }
+      pdf.addImage(imgData2, 'PNG', margin, margin, contentWidth, imgHeight2);
       
       pdf.save(`Devis-${selectedQuote.quote_number}.pdf`);
     } catch (error) {
@@ -3737,8 +4232,17 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
   };
 
   const handleSendEmail = async () => {
-    if (!recipientEmail || !recipientEmail.includes('@')) {
-      showNotification('error', 'Veuillez saisir ou sélectionner une adresse email valide');
+    // Validation des destinataires
+    if (!Array.isArray(recipientEmails) || recipientEmails.length === 0) {
+      showNotification('error', 'Veuillez saisir ou sélectionner au moins une adresse email valide');
+      return;
+    }
+
+    const invalidEmails = recipientEmails.filter(
+      (email) => !email || !email.includes('@')
+    );
+    if (invalidEmails.length > 0) {
+      showNotification('error', 'Une ou plusieurs adresses email ne sont pas valides');
       return;
     }
     
@@ -3747,7 +4251,10 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
       const response = await fetch(`${API_URL}/quotes/${selectedQuote.id}/send-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipientEmail })
+        body: JSON.stringify({ 
+          recipientEmails,
+          message: emailMessage || ''
+        })
       });
       
       const data = await response.json();
@@ -3758,7 +4265,8 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
       
       showNotification('success', 'Devis envoyé par email avec succès');
       setShowEmailModal(false);
-      setRecipientEmail('');
+      setRecipientEmails([]);
+      setEmailMessage('');
       setEmailInputMode('select');
     } catch (error) {
       console.error('Erreur envoi email:', error);
@@ -3803,6 +4311,7 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
     setQuoteItems([...quoteItems, {
       product_id: '',
       product_name: '',
+      product_description: '',
       quantity: 1,
       unit_price: 0,
       vat_rate: 20,
@@ -3825,8 +4334,11 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
       const product = products.find(p => p.id === parseInt(value));
       if (product) {
         newItems[index].product_name = product.name;
+        newItems[index].product_description = product.description || '';
         newItems[index].unit_price = parseFloat(product.price_ht) || 0;
-        newItems[index].vat_rate = parseFloat(product.vat_rate) || 20;
+        // Important: si le taux TVA est 0 (ex: 0.00), ne pas retomber sur 20 (0 est falsy)
+        const parsedVatRate = parseFloat(product.vat_rate);
+        newItems[index].vat_rate = Number.isFinite(parsedVatRate) ? parsedVatRate : 20;
         newItems[index].product_currency_id = product.currency_id || null;
         
         // Si la devise du produit est différente de la devise du devis, initialiser le taux de change à 1.0
@@ -3967,78 +4479,125 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
             </button>
             {user?.role && user.role.toLowerCase() !== 'lecteur' && (
               <>
-                <button
-                  onClick={() => {
-                    // Pré-sélectionner l'email du client s'il existe, sinon passer en mode manuel
-                    const availableEmails = getAvailableEmails();
-                    if (availableEmails.length > 0) {
-                      setRecipientEmail(availableEmails[0].value);
-                      setEmailInputMode('select');
-                    } else {
-                      setRecipientEmail('');
-                      setEmailInputMode('manual');
-                    }
-                    setShowEmailModal(true);
-                  }}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium flex items-center gap-2"
-                >
-                  <span>📧</span>
-                  Envoyer par email
-                </button>
-                <button
-                  onClick={() => handleEditQuote(selectedQuote.id)}
-                  className="px-4 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 font-medium flex items-center gap-2"
-                >
-                  <span>✏️</span>
-                  Modifier
-                </button>
+            <button
+              onClick={() => {
+                // Pré-sélectionner l'email du client s'il existe, sinon passer en mode manuel
+                const availableEmails = getAvailableEmails();
+                if (availableEmails.length > 0) {
+                      setRecipientEmails([availableEmails[0].value]);
+                  setEmailInputMode('select');
+                } else {
+                      setRecipientEmails([]);
+                  setEmailInputMode('manual');
+                }
+                setShowEmailModal(true);
+              }}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium flex items-center gap-2"
+            >
+              <span>📧</span>
+              Envoyer par email
+            </button>
+            <button
+              onClick={() => handleEditQuote(selectedQuote.id)}
+              className="px-4 py-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 font-medium flex items-center gap-2"
+            >
+              <span>✏️</span>
+              Modifier
+            </button>
               </>
             )}
           </div>
         </div>
 
-        <div ref={quoteRef} className="bg-white dark:bg-gray-900 p-8 rounded-lg">
+        {/* Détail visible du devis (écran) */}
+        <div className="bg-white dark:bg-gray-900 p-8 rounded-lg mb-6">
           <div className="mb-6 pb-4 border-b-2 border-gray-300">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Devis {selectedQuote.quote_number}</h1>
-            <p className="text-gray-600 dark:text-gray-400">Date: {selectedQuote.date ? new Date(selectedQuote.date).toLocaleDateString() : '-'}</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+              Devis {selectedQuote.quote_number}
+            </h1>
+            <p className="text-gray-600 dark:text-gray-400">
+              Date: {selectedQuote.date ? new Date(selectedQuote.date).toLocaleDateString() : '-'}
+            </p>
           </div>
           
           {/* Informations générales */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Informations générales</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Informations générales
+            </h3>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Client</label>
-              <p className="text-gray-900 dark:text-white">{selectedQuote.client_name || '-'}</p>
+                <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                  Client
+                </label>
+                <p className="text-gray-900 dark:text-white">
+                  {selectedQuote.client_name || '-'}
+                </p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Devise</label>
+                <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                  Devise
+                </label>
               <p className="text-gray-900 dark:text-white">
-                {selectedQuote.currency_code ? `${selectedQuote.currency_code} (${selectedQuote.currency_symbol})` : '-'}
+                  {selectedQuote.currency_code
+                    ? `${selectedQuote.currency_code} (${selectedQuote.currency_symbol})`
+                    : '-'}
               </p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Statut</label>
+                <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                  Statut
+                </label>
               <span className="inline-flex px-2 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200">
                 {statusLabels[selectedQuote.status] || selectedQuote.status}
               </span>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Date</label>
+                <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                  Date
+                </label>
               <p className="text-gray-900 dark:text-white">
                 {selectedQuote.date ? new Date(selectedQuote.date).toLocaleDateString() : '-'}
               </p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Valide jusqu'au</label>
+                <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                  Valide jusqu'au
+                </label>
               <p className="text-gray-900 dark:text-white">
-                {selectedQuote.valid_until ? new Date(selectedQuote.valid_until).toLocaleDateString() : '-'}
+                  {selectedQuote.valid_until
+                    ? new Date(selectedQuote.valid_until).toLocaleDateString()
+                    : '-'}
               </p>
             </div>
+              {selectedQuote.first_page_text && (
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                    Texte première page
+                  </label>
+                  <p className="text-gray-900 dark:text-white whitespace-pre-wrap">
+                    {selectedQuote.first_page_text}
+                  </p>
+                </div>
+              )}
+              {selectedQuote.introduction_text && (
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                    Introduction
+                  </label>
+                  <p className="text-gray-900 dark:text-white whitespace-pre-wrap">
+                    {selectedQuote.introduction_text}
+                  </p>
+                </div>
+              )}
             {selectedQuote.conditions_generales && (
               <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Conditions Générales de Ventes</label>
-                <p className="text-gray-900 dark:text-white whitespace-pre-wrap">{selectedQuote.conditions_generales}</p>
+                  <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
+                    Conditions Générales de Ventes
+                  </label>
+                  <p className="text-gray-900 dark:text-white whitespace-pre-wrap">
+                    {selectedQuote.conditions_generales}
+                  </p>
               </div>
             )}
           </div>
@@ -4047,34 +4606,67 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
         {/* Lignes du devis */}
         {selectedQuote.items && selectedQuote.items.length > 0 && (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Lignes du devis</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                Lignes du devis
+              </h3>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="border-b border-gray-200 dark:border-gray-700">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Produit</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Quantité</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Prix HT</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">TVA</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Remise %</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Total HT</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                        Produit
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                        Quantité
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                        Prix HT
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                        TVA
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                        Remise %
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                        Total HT
+                      </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {selectedQuote.items.map((item, index) => (
+                  {selectedQuote.items.map((item, index) => {
+                    const productForDesc = products.find((p) => p.id === Number(item.product_id));
+                    const desc = productForDesc?.description || '';
+                    return (
                     <tr key={index}>
-                      <td className="px-4 py-3 text-gray-900 dark:text-white">{item.product_name || '-'}</td>
-                      <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{item.quantity}</td>
+                        <td className="px-4 py-3 text-gray-900 dark:text-white">
+                          <div className="font-medium">{item.product_name || '-'}</div>
+                          {desc && (
+                            <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 whitespace-pre-wrap">
+                              {desc}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
+                          {item.quantity}
+                        </td>
                       <td className="px-4 py-3 text-right text-gray-600 dark:text-gray-300">
-                        {Number(item.unit_price).toFixed(2)} {selectedQuote.currency_symbol || '€'}
+                          {Number(item.unit_price).toFixed(2)}{' '}
+                          {selectedQuote.currency_symbol || '€'}
                       </td>
-                      <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{item.vat_rate}%</td>
-                      <td className="px-4 py-3 text-right text-gray-600 dark:text-gray-300">{item.discount_percent || 0}%</td>
+                        <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
+                          {item.vat_rate}%
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-600 dark:text-gray-300">
+                          {item.discount_percent || 0}%
+                        </td>
                       <td className="px-4 py-3 text-right font-semibold text-gray-900 dark:text-white">
-                        {Number(item.total_ht).toFixed(2)} {selectedQuote.currency_symbol || '€'}
+                          {Number(item.total_ht).toFixed(2)}{' '}
+                          {selectedQuote.currency_symbol || '€'}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -4087,7 +4679,10 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
           <div className="space-y-3">
             <div className="flex justify-between text-gray-700 dark:text-gray-300">
               <span>Total HT après remise</span>
-              <span>{Number(selectedQuote.total_ht || 0).toFixed(2)} {selectedQuote.currency_symbol || '€'}</span>
+                <span>
+                  {Number(selectedQuote.total_ht || 0).toFixed(2)}{' '}
+                  {selectedQuote.currency_symbol || '€'}
+                </span>
             </div>
             {selectedQuote.global_discount_percent > 0 && (
               <div className="flex justify-between text-gray-600 dark:text-gray-400 text-sm">
@@ -4098,15 +4693,442 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
             <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
               <div className="flex justify-between font-semibold text-gray-700 dark:text-gray-300">
                 <span>Total TVA</span>
-                <span>{Number(selectedQuote.total_vat || 0).toFixed(2)} {selectedQuote.currency_symbol || '€'}</span>
+                  <span>
+                    {Number(selectedQuote.total_vat || 0).toFixed(2)}{' '}
+                    {selectedQuote.currency_symbol || '€'}
+                  </span>
               </div>
             </div>
             <div className="flex justify-between text-2xl font-bold text-gray-900 dark:text-white pt-3 border-t-2 border-gray-300 dark:border-gray-600">
               <span>Total TTC</span>
-              <span>{Number(selectedQuote.total_ttc || 0).toFixed(2)} {selectedQuote.currency_symbol || '€'}</span>
+                <span>
+                  {Number(selectedQuote.total_ttc || 0).toFixed(2)}{' '}
+                  {selectedQuote.currency_symbol || '€'}
+                </span>
             </div>
           </div>
         </div>
+        </div>
+
+        {/* Version spéciale impression PDF, rendue hors écran */}
+        <div
+          ref={quoteRef}
+          className="bg-white p-8"
+          style={{ position: 'absolute', left: '-99999px', top: 0 }}
+          aria-hidden="true"
+        >
+          {(() => {
+            const quoteDate =
+              selectedQuote.date ? new Date(selectedQuote.date).toLocaleDateString() : '-';
+
+            const companyLogoUrl = (() => {
+              if (layoutConfig.logo_url) return layoutConfig.logo_url;
+              if (layoutConfig.logo_file_path) {
+                const relativePath = layoutConfig.logo_file_path.replace(/^uploads[\\/]/, '');
+                return `/uploads/${relativePath}`;
+              }
+              return null;
+            })();
+
+            const clientForQuote = printClient;
+
+            const clientLogoUrl = (() => {
+              if (!clientForQuote) return null;
+              if (clientForQuote.logo_url) return clientForQuote.logo_url;
+              if (clientForQuote.logo_file_path) {
+                const relativePath = clientForQuote.logo_file_path.replace(/^uploads[\\/]/, '');
+                return `/uploads/${relativePath}`;
+              }
+              return null;
+            })();
+
+            const currentUser = userWithSignature || user;
+            const signatureImageUrl = (() => {
+              if (currentUser?.signature_link) {
+                return currentUser.signature_link;
+              }
+              if (currentUser?.signature_file_path) {
+                const relativePath = currentUser.signature_file_path.replace(/^uploads[\\/]/, '');
+                return `/uploads/${relativePath}`;
+              }
+              return null;
+            })();
+
+            const hasFooter =
+              layoutConfig.footer_text && layoutConfig.footer_text.trim() !== '';
+
+            const totalPages = 2;
+            const pageHeight = 1123; // Hauteur A4 en pixels (297mm à 96dpi)
+            const marginTop = 50;
+            const marginBottom = 90;
+            const marginLeft = 45;
+            const marginRight = 45;
+            const footerHeight = 80;
+            const contentHeight = pageHeight - marginTop - marginBottom;
+
+            const Footer = ({ pageNum }) => (
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  height: `${footerHeight}px`,
+                  backgroundColor: '#ffffff',
+                  color: '#333333',
+                  borderTop: '1px solid #e0e0e0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '12px',
+                  padding: '20px 0',
+                  zIndex: 10
+                }}
+              >
+                {hasFooter ? (
+                  <div className="text-center whitespace-pre-wrap" style={{ color: '#333333' }}>
+                    {layoutConfig.footer_text}
+                  </div>
+                ) : (
+                  <div className="text-center" style={{ color: '#333333' }}>
+                    Centre urbain Nord, Sana Center, bloc C — 1082, Tunis
+                  </div>
+                )}
+              </div>
+            );
+
+            return (
+              <>
+                {/* Première page */}
+                <div
+                  ref={page1Ref}
+                  style={{
+                    width: '794px',
+                    height: `${pageHeight}px`,
+                    position: 'relative',
+                    backgroundColor: '#ffffff',
+                    paddingTop: `${marginTop}px`,
+                    paddingBottom: `${marginBottom}px`,
+                    paddingLeft: `${marginLeft}px`,
+                    paddingRight: `${marginRight}px`,
+                    pageBreakAfter: 'always',
+                    overflow: 'hidden',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  {/* Contenu principal */}
+                  <div
+                    style={{
+                      height: `${contentHeight}px`,
+                      overflow: 'hidden',
+                      paddingBottom: `${footerHeight}px`
+                    }}
+                  >
+                    {/* En-tête avec logos */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
+                      <div style={{ height: '200px', display: 'flex', alignItems: 'center' }}>
+                        {companyLogoUrl && (
+                          <img
+                            src={companyLogoUrl}
+                            alt="Logo entreprise"
+                            style={{ height: '200px', objectFit: 'contain' }}
+                          />
+                        )}
+                      </div>
+                      <div style={{ height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                        {clientLogoUrl && (
+                          <img
+                            src={clientLogoUrl}
+                            alt="Logo client"
+                            style={{ height: '200px', objectFit: 'contain' }}
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Date */}
+                    <p style={{ textAlign: 'right', fontSize: '14px', color: '#4b5563', marginBottom: '0px' }}>
+                      Tunis, le {quoteDate}
+                    </p>
+                    
+                    {/* Client */}
+                    <div style={{ marginBottom: '30px', fontSize: '14px', color: '#4b5563' }}>
+                      <p style={{ textAlign: 'left' }}>
+                        <span style={{ textDecoration: 'underline', fontWeight: '600' }}>Client :</span>{' '}
+                        <span style={{ fontWeight: '600', color: '#1f2937' }}>
+                          {selectedQuote.client_name || '-'}
+                        </span>
+                      </p>
+                    </div>
+
+                    {/* Titre principal */}
+                    <h1 style={{
+                      textAlign: 'center',
+                      fontSize: '36px',
+                      fontWeight: 'bold',
+                      color: '#111827',
+                      letterSpacing: '0.05em',
+                      marginTop: '0px',
+                      marginBottom: '35px'
+                    }}>
+                      OFFRE COMMERCIALE
+                    </h1>
+                    <p style={{ textAlign: 'center', fontSize: '12px', color: '#374151', marginBottom: '25px' }}>
+                      NUMÉRO : {selectedQuote.quote_number || '-'}
+                    </p>
+
+                    {/* Texte première page - COMPLET, ne pas couper */}
+                    {selectedQuote.first_page_text && (
+                      <div style={{
+                        maxWidth: '600px',
+                        margin: '0 auto 40px auto',
+                        textAlign: 'center'
+                      }}>
+                        <p style={{
+                          fontSize: '14px',
+                          color: '#1f2937',
+                          whiteSpace: 'pre-wrap',
+                          lineHeight: '1.6'
+                        }}>
+                          {selectedQuote.first_page_text}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer fixe */}
+                  <Footer pageNum={1} />
+                </div>
+
+                {/* Deuxième page */}
+                <div
+                  ref={page2Ref}
+                  style={{
+                    width: '794px',
+                    height: `${pageHeight}px`,
+                    position: 'relative',
+                    backgroundColor: '#ffffff',
+                    paddingTop: `${marginTop}px`,
+                    paddingBottom: `${marginBottom}px`,
+                    paddingLeft: `${marginLeft}px`,
+                    paddingRight: `${marginRight}px`,
+                    pageBreakBefore: 'always',
+                    overflow: 'hidden',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  {/* Contenu principal */}
+                  <div
+                    style={{
+                      height: `${contentHeight}px`,
+                      overflow: 'auto',
+                      paddingBottom: `${footerHeight}px`
+                    }}
+                  >
+                    {/* Date */}
+                    <p style={{ textAlign: 'right', fontSize: '14px', color: '#4b5563', marginTop: '0px', marginBottom: '40px' }}>
+                      Tunis, le {quoteDate}
+                    </p>
+
+                    {/* Introduction - Section complète, ne pas couper */}
+                    {selectedQuote.introduction_text && (
+                      <div style={{
+                        marginBottom: '35px',
+                        textAlign: 'left',
+                        pageBreakInside: 'avoid'
+                      }}>
+                        <h2 style={{
+                          fontSize: '16px',
+                          fontWeight: '600',
+                          color: '#111827',
+                          marginTop: '0px',
+                          marginBottom: '25px'
+                        }}>
+                          Introduction
+                        </h2>
+                        <p style={{
+                          fontSize: '14px',
+                          color: '#1f2937',
+                          whiteSpace: 'pre-wrap',
+                          lineHeight: '1.6',
+                          marginBottom: '0px'
+                        }}>
+                          {selectedQuote.introduction_text}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Lignes du devis - Tableau complet */}
+                    {selectedQuote.items && selectedQuote.items.length > 0 && (
+                      <div style={{ marginTop: '30px', marginBottom: '35px', pageBreakInside: 'avoid' }}>
+                        <table style={{
+                          width: '100%',
+                          fontSize: '12px',
+                          marginBottom: '16px',
+                          borderCollapse: 'collapse'
+                        }}>
+                          <thead style={{ borderBottom: '1px solid #e5e7eb' }}>
+                            <tr>
+                              <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', fontWeight: '500', color: '#6b7280', textTransform: 'uppercase' }}>
+                                Produit
+                              </th>
+                              <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', fontWeight: '500', color: '#6b7280', textTransform: 'uppercase' }}>
+                                Quantité
+                              </th>
+                              <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', fontWeight: '500', color: '#6b7280', textTransform: 'uppercase' }}>
+                                Prix HT
+                              </th>
+                              <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', fontWeight: '500', color: '#6b7280', textTransform: 'uppercase' }}>
+                                TVA
+                              </th>
+                              <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', fontWeight: '500', color: '#6b7280', textTransform: 'uppercase' }}>
+                                Remise %
+                              </th>
+                              <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', fontWeight: '500', color: '#6b7280', textTransform: 'uppercase' }}>
+                                Total HT
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedQuote.items.map((item, index) => (
+                              <tr key={index} style={{ borderBottom: '1px solid #e5e7eb' }}>
+                                <td style={{ padding: '8px', color: '#111827', fontSize: '12px' }}>
+                                  <div style={{ fontWeight: 600 }}>
+                                    {item.product_name || '-'}
+                                  </div>
+                                  {(() => {
+                                    const desc =
+                                      products.find((p) => p.id === Number(item.product_id))?.description || '';
+                                    return desc ? (
+                                      <div
+                                        style={{
+                                          marginTop: '4px',
+                                          fontSize: '10px',
+                                          color: '#6b7280',
+                                          whiteSpace: 'pre-wrap',
+                                          lineHeight: '1.4'
+                                        }}
+                                      >
+                                        {desc}
+                                      </div>
+                                    ) : null;
+                                  })()}
+                                </td>
+                                <td style={{ padding: '8px', color: '#374151', fontSize: '12px' }}>
+                                  {item.quantity}
+                                </td>
+                                <td style={{ padding: '8px', textAlign: 'right', color: '#374151', fontSize: '12px' }}>
+                                  {Number(item.unit_price).toFixed(2)}{' '}
+                                  {selectedQuote.currency_symbol || '€'}
+                                </td>
+                                <td style={{ padding: '8px', color: '#374151', fontSize: '12px' }}>
+                                  {item.vat_rate}%
+                                </td>
+                                <td style={{ padding: '8px', textAlign: 'right', color: '#374151', fontSize: '12px' }}>
+                                  {item.discount_percent || 0}%
+                                </td>
+                                <td style={{ padding: '8px', textAlign: 'right', fontWeight: '600', color: '#111827', fontSize: '12px' }}>
+                                  {Number(item.total_ht).toFixed(2)}{' '}
+                                  {selectedQuote.currency_symbol || '€'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        
+                        {/* Totaux */}
+                        <div style={{ textAlign: 'right', fontSize: '12px' }}>
+                          <div style={{ marginBottom: '4px' }}>
+                            <span style={{ color: '#374151' }}>Total HT</span>
+                            <span style={{ marginLeft: '16px', fontWeight: '600', color: '#111827' }}>
+                              {Number(selectedQuote.total_ht || 0).toFixed(2)}{' '}
+                              {selectedQuote.currency_symbol || '€'}
+                            </span>
+                          </div>
+                          <div style={{ marginBottom: '4px' }}>
+                            <span style={{ color: '#374151' }}>Total TVA</span>
+                            <span style={{ marginLeft: '16px', fontWeight: '600', color: '#111827' }}>
+                              {Number(selectedQuote.total_vat || 0).toFixed(2)}{' '}
+                              {selectedQuote.currency_symbol || '€'}
+                            </span>
+                          </div>
+                          <div>
+                            <span style={{ color: '#374151' }}>Total TTC</span>
+                            <span style={{ marginLeft: '16px', fontSize: '14px', fontWeight: 'bold', color: '#111827' }}>
+                              {Number(selectedQuote.total_ttc || 0).toFixed(2)}{' '}
+                              {selectedQuote.currency_symbol || '€'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Conditions Générales de Ventes */}
+                    {selectedQuote.conditions_generales && (
+                      <div style={{ marginTop: '35px', marginBottom: '30px', pageBreakInside: 'avoid' }}>
+                        <h3 style={{
+                          fontSize: '16px',
+                          fontWeight: '600',
+                          color: '#111827',
+                          marginTop: '0px',
+                          marginBottom: '20px'
+                        }}>
+                          Conditions Générales de Ventes
+                        </h3>
+                        <p style={{
+                          fontSize: '14px',
+                          color: '#1f2937',
+                          whiteSpace: 'pre-wrap',
+                          lineHeight: '1.6',
+                          marginBottom: '0px'
+                        }}>
+                          {selectedQuote.conditions_generales}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Validité de l'offre */}
+                    {selectedQuote.valid_until && (
+                      <div style={{ marginBottom: '25px' }}>
+                        <p style={{ fontSize: '14px', color: '#1f2937', marginTop: '0px', marginBottom: '0px' }}>
+                          Offre valable jusqu'au {new Date(selectedQuote.valid_until).toLocaleDateString()}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Signature */}
+                    {(currentUser?.signature_text || signatureImageUrl) && (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0px', marginBottom: '40px' }}>
+                        <div style={{ textAlign: 'right' }}>
+                          {currentUser?.signature_text && (
+                            <p style={{
+                              fontSize: '14px',
+                              color: '#374151',
+                              marginTop: '0px',
+                              marginBottom: '8px',
+                              whiteSpace: 'pre-wrap'
+                            }}>
+                              {currentUser.signature_text}
+                            </p>
+                          )}
+                          {signatureImageUrl && (
+                            <img
+                              src={signatureImageUrl}
+                              alt="Signature"
+                              style={{ maxHeight: '96px', objectFit: 'contain', display: 'inline-block' }}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer fixe */}
+                  <Footer pageNum={2} />
+                </div>
+              </>
+            );
+          })()}
         </div>
 
         {/* Pièces jointes - En dehors de quoteRef pour ne pas apparaître dans le PDF */}
@@ -4365,11 +5387,11 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                 </button>
               </div>
               <form onSubmit={handleCreateComment}>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Commentaire *
-                    </label>
+                  </label>
                     <textarea
                       required
                       value={commentText}
@@ -4383,18 +5405,18 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Assigner à (optionnel)
                     </label>
-                    <select
+                      <select
                       value={assignedToUserId}
                       onChange={(e) => setAssignedToUserId(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-                    >
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                      >
                       <option value="">-- Aucune assignation --</option>
                       {users.map((u) => (
                         <option key={u.id} value={u.id}>
                           {u.name} ({u.email})
-                        </option>
-                      ))}
-                    </select>
+                          </option>
+                        ))}
+                      </select>
                     {assignedToUserId && (
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                         L'utilisateur recevra une notification par email et dans l'application
@@ -4403,9 +5425,9 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                   </div>
                 </div>
                 <div className="flex justify-end gap-3 mt-6">
-                  <button
-                    type="button"
-                    onClick={() => {
+                          <button
+                            type="button"
+                            onClick={() => {
                       setShowCommentModal(false);
                       setCommentText('');
                       setAssignedToUserId('');
@@ -4413,7 +5435,7 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                     className="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
                     Annuler
-                  </button>
+                          </button>
                   <button
                     type="submit"
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
@@ -4435,7 +5457,9 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                 <button
                   onClick={() => {
                     setShowEmailModal(false);
-                    setRecipientEmail('');
+                    setRecipientEmails([]);
+                    setManualEmailInput('');
+                    setEmailMessage('');
                     setEmailInputMode('select');
                   }}
                   className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl"
@@ -4446,69 +5470,115 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Adresse email du destinataire *
+                    Destinataires *
                   </label>
                   <div className="space-y-2">
-                    {emailInputMode === 'select' && getAvailableEmails().length > 0 ? (
-                      <select
-                        value={recipientEmail}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          if (value === 'custom') {
-                            setEmailInputMode('manual');
-                            setRecipientEmail('');
-                          } else {
-                            setRecipientEmail(value);
-                          }
-                        }}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-                      >
-                        <option value="">-- Sélectionner un email --</option>
-                        {getAvailableEmails().map((email, index) => (
-                          <option key={index} value={email.value}>
-                            {email.label}
-                          </option>
-                        ))}
-                        <option value="custom">📝 Saisir un email manuellement</option>
-                      </select>
-                    ) : (
-                      <div className="space-y-2">
-                        <input
-                          type="email"
-                          required
-                          value={recipientEmail}
-                          onChange={(e) => setRecipientEmail(e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-                          placeholder="email@example.com"
-                        />
-                        {emailInputMode === 'manual' && getAvailableEmails().length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEmailInputMode('select');
-                              const availableEmails = getAvailableEmails();
-                              setRecipientEmail(availableEmails.length > 0 ? availableEmails[0].value : '');
-                            }}
-                            className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400"
-                          >
-                            ← Retour à la sélection
-                          </button>
-                        )}
+                    {/* Sélection multiple parmi les emails connus */}
+                    {getAvailableEmails().length > 0 && (
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                          Emails liés au client
+                        </label>
+                        <div className="space-y-1">
+                          {getAvailableEmails().map((email, index) => {
+                            const isSelected = recipientEmails.includes(email.value);
+                            return (
+                              <label
+                                key={index}
+                                className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                                  checked={isSelected}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setRecipientEmails((prev) =>
+                                        prev.includes(email.value)
+                                          ? prev
+                                          : [...prev, email.value]
+                                      );
+                                    } else {
+                                      setRecipientEmails((prev) =>
+                                        prev.filter((v) => v !== email.value)
+                                      );
+                                    }
+                                  }}
+                                />
+                                <span>{email.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
+
+                    {/* Saisie manuelle (plusieurs emails séparés par ; ou ,) */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 mt-2">
+                        Autres destinataires (séparés par ; ou ,)
+                      </label>
+                      <textarea
+                        value={manualEmailInput}
+                        onChange={(e) => {
+                          setManualEmailInput(e.target.value);
+                          const raw = e.target.value
+                            .split(/[;,]/)
+                            .map((s) => s.trim())
+                            .filter((s) => s.length > 0);
+                          setRecipientEmails((prev) => {
+                            // Conserver les emails déjà cochés + emails manuels
+                            const fromCheckbox = prev.filter((e) =>
+                              getAvailableEmails().some((a) => a.value === e)
+                            );
+                            const merged = [...fromCheckbox, ...raw];
+                            return Array.from(new Set(merged));
+                          });
+                        }}
+                        rows={3}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white text-sm"
+                        placeholder="email1@example.com; email2@example.com"
+                      />
                   </div>
-                  {getAvailableEmails().length === 0 && emailInputMode === 'select' && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Aucun email disponible. Veuillez saisir un email manuellement.
-                    </p>
+
+                    {/* Récap des destinataires sélectionnés */}
+                    {recipientEmails.length > 0 && (
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        <span className="font-medium">Destinataires sélectionnés :</span>{' '}
+                        {recipientEmails.join(', ')}
+                      </div>
                   )}
                 </div>
+                </div>
+
+                {/* Champ message personnalisé */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Message (optionnel)
+                  </label>
+                  <textarea
+                    value={emailMessage}
+                    onChange={(e) => setEmailMessage(e.target.value)}
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white text-sm"
+                    placeholder="Votre message qui apparaîtra au début de l'email..."
+                  />
+                </div>
+
+                {/* Information sur le CC utilisateur connecté */}
+                {user && (
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    L'utilisateur connecté <span className="font-medium">{user.email}</span> sera mis en copie (CC).
+                  </div>
+                )}
                 <div className="flex justify-end gap-3 pt-4">
                   <button
                     type="button"
                     onClick={() => {
                       setShowEmailModal(false);
-                      setRecipientEmail('');
+                      setRecipientEmails([]);
+                      setManualEmailInput('');
+                      setEmailMessage('');
                       setEmailInputMode('select');
                     }}
                     disabled={sendingEmail}
@@ -4564,6 +5634,18 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Numéro de devis
+                </label>
+                <input
+                  type="text"
+                  value={formData.quote_number || ''}
+                  onChange={(e) => setFormData({ ...formData, quote_number: e.target.value })}
+                  placeholder="Laisser vide pour générer automatiquement"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Client *
                 </label>
                 <select
@@ -4602,7 +5684,20 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                 </label>
                 <select
                   value={formData.status}
-                  onChange={(e) => setFormData({...formData, status: e.target.value})}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      status: e.target.value,
+                      // Si aucune date n'a encore été saisie, garder la date initiale
+                      // (date de création par défaut) plutôt que de forcer une nouvelle saisie.
+                      date: prev.date || new Date().toISOString().split('T')[0],
+                      valid_until:
+                        prev.valid_until ||
+                        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+                          .toISOString()
+                          .split('T')[0]
+                    }))
+                  }
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
                 >
                   <option value="pending">En attente</option>
@@ -4637,6 +5732,30 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                 />
               </div>
               <div></div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Texte première page
+                </label>
+                <textarea
+                  value={formData.first_page_text}
+                  onChange={(e) => setFormData({ ...formData, first_page_text: e.target.value })}
+                  className="w-full px-3 py-2 mb-4 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  placeholder="Texte qui apparaîtra sur la première page du devis..."
+                  rows="3"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Introduction
+                </label>
+                <textarea
+                  value={formData.introduction_text}
+                  onChange={(e) => setFormData({ ...formData, introduction_text: e.target.value })}
+                  className="w-full px-3 py-2 mb-4 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                  placeholder="Texte d'introduction qui sera affiché sous le texte de la première page..."
+                  rows="3"
+                />
+              </div>
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Conditions Générales de Ventes
@@ -4720,6 +5839,17 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                                   <option key={product.id} value={product.id}>{product.name}</option>
                                 ))}
                               </select>
+                              {(() => {
+                                const desc =
+                                  item.product_description ||
+                                  products.find((p) => p.id === Number(item.product_id))?.description ||
+                                  '';
+                                return desc ? (
+                                  <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 whitespace-pre-wrap">
+                                    {desc}
+                                  </div>
+                                ) : null;
+                              })()}
                             </td>
                             <td className="px-4 py-3">
                               <input
@@ -5052,9 +6182,9 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
               {quotes.length === 0 ? 'Aucun devis trouvé' : 'Aucun devis ne correspond aux critères de recherche'}
             </p>
             {quotes.length === 0 ? (
-              <p className="text-sm text-gray-400 dark:text-gray-500">
-                Créez votre premier devis en cliquant sur "Nouveau devis"
-              </p>
+            <p className="text-sm text-gray-400 dark:text-gray-500">
+              Créez votre premier devis en cliquant sur "Nouveau devis"
+            </p>
             ) : (
               <button
                 onClick={handleResetFilters}
@@ -5077,6 +6207,9 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                     Date
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                    Devise
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                     Montant TTC
@@ -5101,12 +6234,17 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                     <td className="px-4 py-3 whitespace-nowrap text-gray-600 dark:text-gray-300">
                       {quote.date ? new Date(quote.date).toLocaleDateString() : '-'}
                     </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-gray-600 dark-text-gray-300">
+                      {quote.currency_code ? `${quote.currency_code} ${quote.currency_symbol || ''}` : '-'}
+                    </td>
                     <td className="px-4 py-3 whitespace-nowrap text-right font-semibold text-gray-900 dark:text-white">
-                      {quote.total_ttc ? `${Number(quote.total_ttc).toFixed(2)}€` : '-'}
+                      {quote.total_ttc
+                        ? `${Number(quote.total_ttc).toFixed(2)}${quote.currency_symbol || ''}`
+                        : '-'}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className="inline-flex px-2 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200">
-                        {quote.status || 'pending'}
+                        {getStatusLabel(quote.status || 'pending')}
                       </span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium space-x-3">
@@ -5171,6 +6309,11 @@ function ConfigPage() {
     sender_email: 'contact@entreprise.com',
     sender_name: 'Mon Entreprise'
   });
+  const [layoutConfig, setLayoutConfig] = useState({
+    logo_url: '',
+    logo_file_path: null,
+    footer_text: ''
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -5184,6 +6327,7 @@ function ConfigPage() {
   const [showVatRateModal, setShowVatRateModal] = useState(false);
   const [editingVatRate, setEditingVatRate] = useState(null);
   const [vatRateForm, setVatRateForm] = useState({ rate: '', label: '' });
+  const [uploadingLayoutLogo, setUploadingLayoutLogo] = useState(false);
 
   const loadCategories = async () => {
     try {
@@ -5215,11 +6359,12 @@ function ConfigPage() {
   useEffect(() => {
     const loadConfig = async () => {
       try {
-        const [cats, curs, vats, smtp] = await Promise.all([
+        const [cats, curs, vats, smtp, layout] = await Promise.all([
           api.get('/config/categories'),
           api.get('/config/currencies'),
           api.get('/config/vat-rates'),
-          api.get('/config/smtp').catch(() => ({}))
+          api.get('/config/smtp').catch(() => ({})),
+          api.get('/config/layout').catch(() => ({}))
         ]);
         setCategories(cats);
         setCurrencies(curs);
@@ -5233,6 +6378,13 @@ function ConfigPage() {
             password: smtp.password || '',
             sender_email: smtp.sender_email || 'contact@entreprise.com',
             sender_name: smtp.sender_name || 'Mon Entreprise'
+          });
+        }
+        if (layout && Object.keys(layout).length > 0) {
+          setLayoutConfig({
+            logo_url: layout.logo_url || '',
+            logo_file_path: layout.logo_file_path || null,
+            footer_text: layout.footer_text || ''
           });
         }
       } catch (error) {
@@ -5278,6 +6430,62 @@ function ConfigPage() {
       setMessage({ type: 'error', text: 'Erreur lors du test de connexion' });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleSaveLayout = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api.post('/config/layout', layoutConfig);
+      setMessage({ type: 'success', text: 'Mise en page enregistrée avec succès' });
+    } catch (error) {
+      console.error('Erreur sauvegarde mise en page:', error);
+      setMessage({ type: 'error', text: 'Erreur lors de l\'enregistrement de la mise en page' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUploadLayoutLogo = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    setUploadingLayoutLogo(true);
+    setMessage(null);
+
+    try {
+      const form = new FormData();
+      form.append('file', file);
+
+      const response = await fetch(`${API_URL}/config/layout/logo`, {
+        method: 'POST',
+        body: form
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Erreur lors de l\'upload du logo');
+      }
+
+      if (data.logo_file_path) {
+        const baseUrl = API_URL.replace('/api', '');
+        const relativePath = data.logo_file_path.replace(/^uploads[\\/]/, '');
+        setLayoutConfig((prev) => ({
+          ...prev,
+          logo_file_path: data.logo_file_path,
+          logo_url: '', // si on utilise le fichier, on vide l’URL
+          logo_preview: `${baseUrl}/uploads/${relativePath}`
+        }));
+      }
+
+      setMessage({ type: 'success', text: 'Logo de l\'entreprise mis à jour avec succès' });
+    } catch (error) {
+      console.error('Erreur upload logo mise en page:', error);
+      setMessage({ type: 'error', text: error.message || 'Erreur lors de l\'upload du logo' });
+    } finally {
+      setUploadingLayoutLogo(false);
     }
   };
 
@@ -5443,6 +6651,97 @@ function ConfigPage() {
         <h2 className="text-3xl font-bold text-gray-900 dark:text-white">Configuration</h2>
         <p className="text-gray-500 dark:text-gray-400 mt-1">Données de base de l'application</p>
       </header>
+
+      {/* Mise en page */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-2xl">🖨️</span>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Mise en page</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Définissez le logo de l'entreprise et le texte de pied de page utilisé sur les devis.
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveLayout} className="space-y-4">
+          {/* Logo entreprise */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Logo de l'entreprise
+            </label>
+            <div className="space-y-2">
+              {(layoutConfig.logo_preview || layoutConfig.logo_url) && (
+                <img
+                  src={layoutConfig.logo_preview || layoutConfig.logo_url}
+                  alt="Logo de l'entreprise"
+                  className="h-16 object-contain border border-gray-200 dark:border-gray-700 bg-white rounded"
+                />
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleUploadLayoutLogo}
+                disabled={uploadingLayoutLogo}
+                className="w-full text-sm text-gray-700 dark:text-gray-300"
+              />
+              {uploadingLayoutLogo && (
+                <p className="text-xs text-blue-500 mt-1">Upload du logo en cours...</p>
+              )}
+            </div>
+          </div>
+
+          {/* URL logo */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              URL du logo
+            </label>
+            <input
+              type="url"
+              value={layoutConfig.logo_url}
+              onChange={(e) =>
+                setLayoutConfig((prev) => ({
+                  ...prev,
+                  logo_url: e.target.value,
+                  logo_file_path: e.target.value ? null : prev.logo_file_path,
+                  logo_preview: e.target.value || prev.logo_preview
+                }))
+              }
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white text-sm"
+              placeholder="https://exemple.com/logo.png"
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Si une URL est renseignée, elle sera utilisée comme logo prioritaire.
+            </p>
+          </div>
+
+          {/* Texte pied de page */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Texte pied de page
+            </label>
+            <textarea
+              value={layoutConfig.footer_text}
+              onChange={(e) =>
+                setLayoutConfig((prev) => ({ ...prev, footer_text: e.target.value }))
+              }
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white text-sm"
+              placeholder="Texte qui apparaîtra en bas des pages (adresse, mentions légales, etc.)"
+            />
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50"
+            >
+              {saving ? 'Enregistrement...' : 'Enregistrer la mise en page'}
+            </button>
+          </div>
+        </form>
+      </div>
 
       {/* Configuration SMTP */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
