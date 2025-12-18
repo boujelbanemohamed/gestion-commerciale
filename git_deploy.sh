@@ -63,15 +63,17 @@ EOF
 
   echo "🚀 Push (mode token via env) ..."
   set +e
-  git push "$REMOTE" "$BRANCH"
+  out="$(git push "$REMOTE" "$BRANCH" 2>&1)"
   rc=$?
   set -e
 
   rm -f "$TMP_ASKPASS"
 
   if [[ $rc -ne 0 ]]; then
-    echo "❌ Push échoué (auth/permissions?)."
-    echo "ℹ️  Vérifiez que le token a bien les droits d'écriture sur le repo."
+    echo "❌ Push échoué."
+    echo "$out"
+    echo ""
+    echo "ℹ️  Vérifiez que le token a bien les droits d'écriture sur le repo (scopes/permissions)."
     exit $rc
   fi
 
@@ -80,7 +82,31 @@ EOF
 fi
 
 echo "🚀 Push (mode interactif/Keychain) ..."
-git push "$REMOTE" "$BRANCH"
+set +e
+out="$(git push "$REMOTE" "$BRANCH" 2>&1)"
+rc=$?
+set -e
+
+if [[ $rc -ne 0 ]]; then
+  echo "❌ Push échoué."
+  echo "$out"
+  echo ""
+  # Cas fréquent sur macOS: mauvais compte/token conservé dans le trousseau
+  if echo "$out" | grep -qiE "denied to|Authentication failed|Invalid username or token"; then
+    echo "➡️  Sur macOS, supprimez les identifiants GitHub en cache (Keychain), puis relancez :"
+    echo "    printf \"protocol=https\\nhost=github.com\\n\\n\" | git credential-osxkeychain erase"
+    echo ""
+    echo "Puis relancez :"
+    echo "    ./git_deploy.sh"
+    echo ""
+    echo "Ou en non-interactif (CI) :"
+    echo "    export GITHUB_USERNAME=\"boujelbanemohamed\""
+    echo "    export GITHUB_TOKEN=\"<votre_token>\""
+    echo "    ./git_deploy.sh"
+  fi
+  exit $rc
+fi
+
 echo "✅ Push OK."
 
 
