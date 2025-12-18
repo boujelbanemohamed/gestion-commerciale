@@ -1,4 +1,4 @@
-.PHONY: help build up down restart logs clean db-connect install
+.PHONY: help build up down restart logs clean db-connect install git-status git-push git-deploy
 
 # Couleurs pour l'affichage
 BLUE := \033[0;34m
@@ -116,3 +116,16 @@ backup-db: ## Sauvegarder la base de données
 	@echo "$(GREEN)✅ Sauvegarde créée$(NC)"
 
 default: help
+
+# ==============================
+# Git
+# ==============================
+
+git-status: ## Afficher l'état git
+	@git status
+
+git-push: ## Push (utilise le credential helper / Keychain)
+	@git push origin $$(git branch --show-current)
+
+git-deploy: ## Déploiement Git sécurisé (supporte GITHUB_TOKEN via env)
+	@./git_deploy.sh
