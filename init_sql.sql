@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS clients (
     email VARCHAR(255) UNIQUE NOT NULL,
     phone VARCHAR(50),
     matricule_fiscal VARCHAR(50),
-    address TEXT NOT NULL,
+    address TEXT ,
     city VARCHAR(100) NOT NULL,
     postal_code VARCHAR(20) NOT NULL,
     country VARCHAR(100) NOT NULL DEFAULT 'France',
@@ -200,10 +200,10 @@ INSERT INTO products (reference, name, description, category_id, price_ht, vat_r
 ('PRD-003', 'Casque Audio ProSound', 'Casque audio professionnel', 3, 165.83, 3, 1);
 
 -- Clients de test
-INSERT INTO clients (name, email, phone, city, country) VALUES 
-('Alice Martin', 'alice.martin@example.com', '01 23 45 67 89', 'Paris', 'France'),
-('Bob Dupont', 'bob.dupont@example.com', '06 11 22 33 44', 'Lyon', 'France'),
-('Carla Moreau', 'carla.moreau@example.com', '04 98 76 54 32', 'Marseille', 'France');
+INSERT INTO clients (name, email, phone, address, city, country) VALUES
+('Alice Martin', 'alice.martin@example.com', '01 23 45 67 89', '1 Rue de Paris', 'Paris', 'France'),
+('Bob Dupont', 'bob.dupont@example.com', '06 11 22 33 44', '2 Avenue de Lyon', 'Lyon', 'France'),
+('Carla Moreau', 'carla.moreau@example.com', '04 98 76 54 32', '3 Boulevard de Marseille', 'Marseille', 'France');
 
 -- Configuration SMTP
 INSERT INTO app_config (config_key, config_value) VALUES 
