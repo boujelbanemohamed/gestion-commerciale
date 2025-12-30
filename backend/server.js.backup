@@ -1310,18 +1310,15 @@ app.post('/api/quotes/:id/send-email', async (req, res) => {
     }
     
     // Créer le transporteur email
-const transporter = nodemailer.createTransport({
-  host: config.smtp_server,
-  port: parseInt(config.smtp_port),
-  secure: false,
-  auth: {
-    user: config.smtp_user,
-    pass: config.smtp_password,
-  },
-  tls: {
-    rejectUnauthorized: false
-  }
-});
+    const transporter = nodemailer.createTransport({
+      host: smtpConfig.server,
+      port: parseInt(smtpConfig.port),
+      secure: smtpConfig.secure === 'true',
+      auth: {
+        user: smtpConfig.user,
+        pass: smtpConfig.password
+      }
+    });
     
     // Construire le HTML du devis
     let itemsHTML = '';
@@ -1589,18 +1586,15 @@ app.post('/api/quotes/:id/comments', async (req, res) => {
           });
           
           if (smtpConfig.server && smtpConfig.port && smtpConfig.user && smtpConfig.password) {
-const transporter = nodemailer.createTransport({
-  host: config.smtp_server,
-  port: parseInt(config.smtp_port),
-  secure: false,
-  auth: {
-    user: config.smtp_user,
-    pass: config.smtp_password,
-  },
-  tls: {
-    rejectUnauthorized: false
-  }
-});
+            const transporter = nodemailer.createTransport({
+              host: smtpConfig.server,
+              port: parseInt(smtpConfig.port),
+              secure: smtpConfig.secure === 'true',
+              auth: {
+                user: smtpConfig.user,
+                pass: smtpConfig.password
+              }
+            });
             
             const userInfo = await pool.query('SELECT name FROM users WHERE id = $1', [userId]);
             const userName = userInfo.rows[0]?.name || 'Un utilisateur';
