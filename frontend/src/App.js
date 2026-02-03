@@ -7,6 +7,18 @@ import html2canvas from 'html2canvas';
 // Cela fonctionne aussi bien en développement qu'en production
 const API_URL = process.env.REACT_APP_API_URL || '/api';
 
+/** URL pour afficher un fichier uploadé (signature, logo, etc.). Toujours l’URL complète du backend
+ *  pour éviter les 500 du proxy ; le backend envoie CORP: cross-origin pour autoriser l’affichage.
+ *  Aucun redimensionnement ni compression côté backend : le fichier est enregistré tel quel. */
+function getUploadsDisplayUrl(relativePath, cacheBust) {
+  if (!relativePath) return null;
+  const p = relativePath.replace(/^uploads[\\/]/, '');
+  const baseUrl = (API_URL || '').replace(/\/api\/?$/, '');
+  const url = baseUrl ? `${baseUrl}/uploads/${p}` : `/uploads/${p}`;
+  if (cacheBust) return `${url}?v=${encodeURIComponent(cacheBust)}`;
+  return url;
+}
+
 // Service API
 const api = {
   async get(endpoint) {
@@ -41,6 +53,53 @@ const api = {
     return response.json();
   }
 };
+
+/** Retourne une URL de logo valide ou null (null, undefined, chaîne vide = pas de logo). */
+function normalizeLogoUrl(url) {
+  if (url == null) return null;
+  if (typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+/**
+ * Détermine comment afficher les logos en haut du PDF du devis.
+ * Cas 1 : client + entreprise -> client gauche, entreprise droite, alignés.
+ * Cas 2 : uniquement entreprise -> entreprise centrée.
+ * Cas 3 : uniquement client -> ne rien afficher.
+ * Cas 4 : aucun -> ne rien afficher.
+ */
+function getPdfLogoDisplay(companyLogoUrl, clientLogoUrl) {
+  const company = normalizeLogoUrl(companyLogoUrl);
+  const client = normalizeLogoUrl(clientLogoUrl);
+  const hasCompanyLogo = !!company;
+  const hasClientLogo = !!client;
+  const showLogoHeader = hasCompanyLogo;
+  const companyCenteredOnly = hasCompanyLogo && !hasClientLogo;
+  const bothLogos = hasCompanyLogo && hasClientLogo;
+  return {
+    showLogoHeader,
+    companyLogoUrl: company,
+    clientLogoUrl: client,
+    bothLogos,
+    companyCenteredOnly
+  };
+}
+
+/** Logo pour PDF : masqué si src absent ou si le chargement échoue (fallback = ne rien afficher). */
+function PdfLogoImage({ src, alt, style }) {
+  const [loadError, setLoadError] = useState(false);
+  if (!src || loadError) return null;
+  return (
+    <img
+      src={src}
+      alt={alt}
+      style={style}
+      crossOrigin="anonymous"
+      onError={() => setLoadError(true)}
+    />
+  );
+}
 
 // Composant principal
 export default function App() {
@@ -341,7 +400,7 @@ export default function App() {
 
         {/* Main content */}
         <main className="flex-1 overflow-y-auto">
-          {currentPage === 'dashboard' && <Dashboard />}
+          {currentPage === 'dashboard' && <Dashboard onNavigate={setCurrentPage} />}
           {user?.role && (user.role.toLowerCase() === 'admin' || user.role.toLowerCase() === 'commercial') && currentPage === 'clients' && <ClientsPage />}
           {user?.role && (user.role.toLowerCase() === 'admin' || user.role.toLowerCase() === 'commercial') && currentPage === 'products' && <ProductsPage />}
           {currentPage === 'quotes' && <QuotesPage user={user} quoteToOpen={quoteToOpen} onQuoteOpened={() => setQuoteToOpen(null)} />}
@@ -397,10 +456,12 @@ function LoginPage({ onLogin }) {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="max-w-md w-full bg-white p-8 rounded-xl shadow-lg">
         <div className="text-center mb-8">
-          <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-2xl">👥</span>
-          </div>
-          <h2 className="text-3xl font-bold text-gray-900">Bienvenue</h2>
+          <img
+            src="https://images.seeklogo.com/logo-png/35/2/monetique-tunisie-logo-png_seeklogo-354354.png"
+            alt="Logo"
+            className="mx-auto mb-4 h-16 w-auto object-contain"
+          />
+          <h1 className="text-xl font-semibold text-gray-700 mb-1">Gestion Commerciale</h1>
           <p className="text-gray-500 mt-2">Connectez-vous à votre compte</p>
         </div>
 
@@ -451,7 +512,7 @@ function LoginPage({ onLogin }) {
 }
 
 // Dashboard
-function Dashboard() {
+function Dashboard({ onNavigate }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activityData, setActivityData] = useState(null);
@@ -466,7 +527,7 @@ function Dashboard() {
 
   const loadStats = async () => {
     try {
-      const data = await api.get('/stats/dashboard');
+      const data = await api.get('/stats/dashboard?t=' + Date.now());
       setStats(data);
     } catch (error) {
       console.error('Erreur chargement stats:', error);
@@ -541,6 +602,7 @@ function Dashboard() {
           subtitle="Clients enregistrés"
           icon="👥"
           color="blue"
+          onClick={onNavigate ? () => onNavigate('clients') : undefined}
         />
         <StatCard
           title="Produits"
@@ -548,6 +610,7 @@ function Dashboard() {
           subtitle="Produits au catalogue"
           icon="📦"
           color="green"
+          onClick={onNavigate ? () => onNavigate('products') : undefined}
         />
         <StatCard
           title="Devis"
@@ -555,26 +618,28 @@ function Dashboard() {
           subtitle="En attente"
           icon="📄"
           color="yellow"
+          onClick={onNavigate ? () => onNavigate('quotes') : undefined}
         />
+        {/* CA du mois : uniquement devis acceptés, par devise, sans conversion */}
         {Array.isArray(stats?.revenue_by_currency) && stats.revenue_by_currency.length > 0 ? (
           stats.revenue_by_currency.map((rev, index) => (
             <StatCard
               key={rev.currency_code || `currency-${index}`}
-              title={`CA du mois (${rev.currency_code || 'N/A'})`}
-              value={`${(rev.total || 0).toFixed(2)}${rev.currency_symbol || ''}`}
-              subtitle="Devis acceptés"
+              title={`CA HT du mois (${rev.currency_code || 'N/A'})`}
+              value={`${(rev.total || 0).toFixed(2)} ${(rev.currency_symbol ?? '').trim()}`.trim()}
+              subtitle="Devis acceptés (HT)"
               icon="📈"
               color="purple"
             />
           ))
         ) : (
-        <StatCard
-          title="CA du mois"
-          value={`${(stats?.revenue || 0).toFixed(2)}€`}
-            subtitle="Devis acceptés"
-          icon="📈"
-          color="purple"
-        />
+          <StatCard
+            title="CA HT du mois"
+            value="—"
+            subtitle="Aucune devise configurée (Configuration > Devises)"
+            icon="📈"
+            color="purple"
+          />
         )}
       </div>
 
@@ -590,7 +655,7 @@ function Dashboard() {
                   <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Statut</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Devise</th>
                   <th className="text-right py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Nombre de devis</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Montant total</th>
+                  <th className="text-right py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Montant total (HT)</th>
                 </tr>
               </thead>
               <tbody>
@@ -719,7 +784,7 @@ function Dashboard() {
                   <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Statut</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Devise</th>
                   <th className="text-right py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Nombre de devis</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Montant total</th>
+                  <th className="text-right py-3 px-4 font-semibold text-gray-700 dark:text-gray-300">Montant total (HT)</th>
                 </tr>
               </thead>
               <tbody>
@@ -788,7 +853,7 @@ function Dashboard() {
   );
 }
 
-function StatCard({ title, value, subtitle, icon, color }) {
+function StatCard({ title, value, subtitle, icon, color, onClick }) {
   const colors = {
     blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
     green: 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400',
@@ -796,8 +861,13 @@ function StatCard({ title, value, subtitle, icon, color }) {
     purple: 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400'
   };
 
-  return (
-    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border border-gray-200 dark:border-gray-700">
+  const baseClass = 'bg-white dark:bg-gray-800 p-6 rounded-lg shadow border border-gray-200 dark:border-gray-700';
+  const clickableClass = onClick
+    ? `${baseClass} cursor-pointer hover:ring-2 hover:ring-blue-500 dark:hover:ring-blue-400 hover:border-blue-400 dark:hover:border-blue-500 transition-all select-none`
+    : baseClass;
+
+  const content = (
+    <>
       <div className="flex justify-between items-start mb-4">
         <h3 className="font-semibold text-gray-600 dark:text-gray-400">{title}</h3>
         <div className={`w-10 h-10 rounded-full flex items-center justify-center ${colors[color]}`}>
@@ -806,8 +876,28 @@ function StatCard({ title, value, subtitle, icon, color }) {
       </div>
       <p className="text-3xl font-bold text-gray-900 dark:text-white mb-1">{value}</p>
       <p className="text-sm text-gray-500 dark:text-gray-400">{subtitle}</p>
-    </div>
+      {onClick && (
+        <p className="text-xs text-blue-600 dark:text-blue-400 mt-2 font-medium flex items-center gap-1">
+          <span>Cliquer pour accéder</span>
+          <span aria-hidden>→</span>
+        </p>
+      )}
+    </>
   );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`w-full text-left block ${clickableClass}`}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return <div className={clickableClass}>{content}</div>;
 }
 
 // Page Mon Profil
@@ -851,9 +941,7 @@ function ProfilePage({ user, onUpdateUser }) {
       });
 
       if (data.signature_file_path) {
-        const baseUrl = API_URL.replace('/api', '');
-        const relativePath = data.signature_file_path.replace(/^uploads[\\/]/, '');
-        setSignaturePreviewUrl(`${baseUrl}/uploads/${relativePath}`);
+        setSignaturePreviewUrl(getUploadsDisplayUrl(data.signature_file_path, data.updated_at));
       } else {
         setSignaturePreviewUrl(null);
       }
@@ -981,7 +1069,7 @@ function ProfilePage({ user, onUpdateUser }) {
       }));
 
       if (data.signature_file_path) {
-        setSignaturePreviewUrl(`${API_URL.replace('/api', '')}/uploads/${data.signature_file_path.replace(/^uploads[\\/]/, '')}`);
+        setSignaturePreviewUrl(getUploadsDisplayUrl(data.signature_file_path, data.updated_at));
       }
 
       setMessage('Signature mise à jour avec succès');
@@ -989,6 +1077,40 @@ function ProfilePage({ user, onUpdateUser }) {
     } catch (err) {
       console.error('Erreur upload signature:', err);
       setError(err.message || 'Erreur lors de l\'upload de la signature');
+    } finally {
+      setUploadingSignature(false);
+    }
+  };
+
+  const handleClearSignatureFile = async () => {
+    setUploadingSignature(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const form = new FormData();
+      form.append('userId', user.id);
+      form.append('signature_text', formData.signature_text || '');
+      form.append('signature_link', formData.signature_link || '');
+      form.append('clear_file', 'true');
+
+      const response = await fetch(`${API_URL}/auth/profile/signature`, {
+        method: 'POST',
+        body: form
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Erreur lors de la suppression de la signature');
+      }
+
+      setProfile(data);
+      setSignaturePreviewUrl(null);
+      setMessage('Image de signature supprimée avec succès');
+      setTimeout(() => setMessage(null), 3000);
+    } catch (err) {
+      console.error('Erreur suppression signature:', err);
+      setError(err.message || 'Erreur lors de la suppression de la signature');
     } finally {
       setUploadingSignature(false);
     }
@@ -1204,6 +1326,21 @@ function ProfilePage({ user, onUpdateUser }) {
                         disabled={uploadingSignature}
                         className="w-full text-sm text-gray-700 dark:text-gray-300"
                       />
+                      {signaturePreviewUrl && (
+                        <div className="mt-2 flex items-center gap-3">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            Une image de signature est actuellement enregistrée.
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleClearSignatureFile}
+                            className="text-xs text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                            disabled={uploadingSignature}
+                          >
+                            Supprimer l&apos;image
+                          </button>
+                        </div>
+                      )}
                       {uploadingSignature && (
                         <p className="text-xs text-blue-500 mt-1">Upload de la signature en cours...</p>
                       )}
@@ -1281,27 +1418,41 @@ function ProfilePage({ user, onUpdateUser }) {
                     </div>
                   )}
                   {signatureType === 'link' && formData.signature_link && (
-                    <div>
+                    <div className="w-full">
                       <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                         Signature (image depuis le lien)
                       </p>
-                      <img
-                        src={formData.signature_link}
-                        alt="Signature utilisateur (lien)"
-                        className="max-h-40 object-contain border border-gray-200 dark:border-gray-700 bg-white mx-auto"
-                      />
+                      <div className="w-full flex justify-center items-center bg-gray-50 dark:bg-gray-700/30 p-4 rounded">
+                        <img
+                          src={formData.signature_link}
+                          alt="Signature"
+                          className="max-w-full max-h-96 flex-shrink-0"
+                          style={{
+                            width: 'auto',
+                            height: 'auto',
+                            objectFit: 'contain'
+                          }}
+                        />
+                      </div>
                     </div>
                   )}
                   {signatureType === 'file' && signaturePreviewUrl && (
-                    <div>
+                    <div className="w-full">
                       <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                         Fichier de signature
                       </p>
-                      <img
-                        src={signaturePreviewUrl}
-                        alt="Signature utilisateur"
-                        className="max-h-40 object-contain border border-gray-200 dark:border-gray-700 bg-white mx-auto"
-                      />
+                      <div className="w-full flex justify-center items-center bg-gray-50 dark:bg-gray-700/30 p-4 rounded">
+                        <img
+                          src={signaturePreviewUrl}
+                          alt="Signature"
+                          className="max-w-full max-h-96 flex-shrink-0"
+                          style={{
+                            width: 'auto',
+                            height: 'auto',
+                            objectFit: 'contain'
+                          }}
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1608,8 +1759,8 @@ function ClientDetailPage({ client, onBack, onUpdate }) {
                     </p>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
                       {formatDate(quote.date)}{' '}
-                      {quote.total_ttc
-                        ? `- ${Number(quote.total_ttc).toFixed(2)}${quote.currency_symbol || ''}`
+                      {quote.total_ht
+                        ? `- ${Number(quote.total_ht).toFixed(2)}${quote.currency_symbol || ''}`
                         : ''}
                     </p>
                   </div>
@@ -1734,6 +1885,9 @@ function ClientDetailPage({ client, onBack, onUpdate }) {
                     />
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                       Si une URL est fournie, elle sera utilisée comme logo. Vous pouvez aussi téléverser un fichier ci-contre.
+                    </p>
+                    <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
+                      Pour que le logo apparaisse dans le PDF, il est recommandé de téléverser un fichier plutôt que d&apos;utiliser une URL externe.
                     </p>
                   </div>
                 </div>
@@ -3764,7 +3918,8 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
     first_page_text: '',
     introduction_text: '',
     global_discount_percent: 0,
-    global_discount_type: '%'
+    global_discount_type: '%',
+    mode_calcul: 'ttc'
   });
   const [quoteItems, setQuoteItems] = useState([]);
 
@@ -3798,10 +3953,18 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
       try {
         const layout = await api.get('/config/layout');
         if (layout && Object.keys(layout).length > 0) {
+          // Reconstruire une URL de prévisualisation si un fichier de logo est enregistré
+          let logo_preview = '';
+          if (layout.logo_file_path) {
+            const baseUrl = API_URL.replace('/api', '');
+            const relativePath = layout.logo_file_path.replace(/^uploads[\\/]/, '');
+            logo_preview = `${baseUrl}/uploads/${relativePath}`;
+          }
           setLayoutConfig({
             logo_url: layout.logo_url || '',
             logo_file_path: layout.logo_file_path || null,
-            footer_text: layout.footer_text || ''
+            footer_text: layout.footer_text || '',
+            logo_preview
           });
         }
       } catch (error) {
@@ -3899,7 +4062,8 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
       first_page_text: '',
       introduction_text: '',
       global_discount_percent: 0,
-      global_discount_type: '%'
+      global_discount_type: '%',
+      mode_calcul: 'ttc'
     });
     setQuoteItems([]);
   };
@@ -4080,7 +4244,8 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
         first_page_text: quote.first_page_text || '',
         introduction_text: quote.introduction_text || '',
         global_discount_percent: quote.global_discount_percent || 0,
-        global_discount_type: '%'
+        global_discount_type: '%',
+        mode_calcul: quote.mode_calcul === 'ht' ? 'ht' : 'ttc'
       });
       setQuoteItems(quote.items || []);
       setShowDetailPage(false);
@@ -4181,6 +4346,21 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
     if (!page1Ref.current || !page2Ref.current) return;
     
     try {
+      // Attendre que les images (logos, signature) soient chargées pour que html2canvas puisse les dessiner
+      const waitForImages = (el) => {
+        const imgs = el.querySelectorAll('img[src]');
+        return Promise.all(Array.from(imgs).map((img) => {
+          if (img.complete && img.naturalHeight !== 0) return Promise.resolve();
+          return new Promise((resolve) => {
+            img.onload = resolve;
+            img.onerror = resolve;
+            if (img.complete) resolve();
+          });
+        }));
+      };
+      await waitForImages(page1Ref.current);
+      await waitForImages(page2Ref.current);
+
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pageWidth = 210; // Largeur A4 en mm
       const pageHeight = 297; // Hauteur A4 en mm
@@ -4353,39 +4533,44 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
     setQuoteItems(newItems);
   };
 
-  // Calculer les totaux
+  // Calculer les totaux : unit_price est TOUJOURS en devise produit ; on convertit une seule fois en devise du devis
+  // En mode HT : on n'utilise pas la TVA (tva = 0)
   const calculateTotals = () => {
     let totalHTAvantRemise = 0;
     let totalHTApresRemise = 0;
     const vatDetails = {};
+    const isModeHT = formData.mode_calcul === 'ht';
     
     quoteItems.forEach(item => {
       const qty = parseFloat(item.quantity) || 0;
-      let prixHT = parseFloat(item.unit_price) || 0;
+      const unitPriceProduct = parseFloat(item.unit_price) || 0;
       const discount = parseFloat(item.discount_percent) || 0;
-      const tva = parseFloat(item.vat_rate) || 0;
+      const tva = isModeHT ? 0 : (parseFloat(item.vat_rate) || 0);
       const exchangeRate = parseFloat(item.exchange_rate) || 1.0;
       
-      // Convertir le prix dans la devise du devis
-      prixHT = prixHT * exchangeRate;
+      // Une seule conversion : devise produit → devise du devis
+      const prixHTQuote = unitPriceProduct * exchangeRate;
       
-      const totalLigneAvantRemise = qty * prixHT;
+      const totalLigneAvantRemise = qty * prixHTQuote;
       const montantRemise = (totalLigneAvantRemise * discount) / 100;
       const totalLigneHT = totalLigneAvantRemise - montantRemise;
-      const montantTVA = (totalLigneHT * tva) / 100;
+      const montantTVA = isModeHT ? 0 : (totalLigneHT * tva) / 100;
       
       totalHTAvantRemise += totalLigneAvantRemise;
       totalHTApresRemise += totalLigneHT;
       
-      const vatKey = `${tva}%`;
-      if (!vatDetails[vatKey]) {
-        vatDetails[vatKey] = { rate: tva, amount: 0 };
+      if (!isModeHT && tva > 0) {
+        const vatKey = `${tva}%`;
+        if (!vatDetails[vatKey]) {
+          vatDetails[vatKey] = { rate: tva, amount: 0 };
+        }
+        vatDetails[vatKey].amount += montantTVA;
       }
-      vatDetails[vatKey].amount += montantTVA;
     });
     
     // Appliquer la remise globale
     const remiseGlobale = parseFloat(formData.global_discount_percent) || 0;
+    const totalHTAvantRemiseGlobale = totalHTApresRemise; // HT après remises ligne, avant remise globale
     const montantRemiseGlobale = (totalHTApresRemise * remiseGlobale) / 100;
     totalHTApresRemise = totalHTApresRemise - montantRemiseGlobale;
     
@@ -4395,6 +4580,8 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
     return {
       totalHTAvantRemise,
       totalHTApresRemise,
+      totalHTAvantRemiseGlobale,
+      montantRemiseGlobale,
       vatDetails,
       totalTVA,
       totalTTC
@@ -4402,6 +4589,10 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
   };
 
   const totals = calculateTotals();
+
+  // Symbole de la devise du devis (pour afficher tous les totaux dans cette devise)
+  const quoteCurrency = formData.currency_id ? currencies.find(c => c.id === parseInt(formData.currency_id)) : null;
+  const quoteCurrencySymbol = quoteCurrency?.symbol ?? '€';
 
   // Page de détail du devis
   if (showDetailPage && selectedQuote) {
@@ -4604,7 +4795,9 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
         </div>
 
         {/* Lignes du devis */}
-        {selectedQuote.items && selectedQuote.items.length > 0 && (
+        {selectedQuote.items && selectedQuote.items.length > 0 && (() => {
+          const isDetailModeHT = selectedQuote.mode_calcul === 'ht';
+          return (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                 Lignes du devis
@@ -4622,9 +4815,11 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                         Prix HT
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                        TVA
-                      </th>
+                      {!isDetailModeHT && (
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+                          TVA
+                        </th>
+                      )}
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                         Remise %
                       </th>
@@ -4654,9 +4849,11 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                           {Number(item.unit_price).toFixed(2)}{' '}
                           {selectedQuote.currency_symbol || '€'}
                       </td>
-                        <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
-                          {item.vat_rate}%
-                        </td>
+                        {!isDetailModeHT && (
+                          <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
+                            {item.vat_rate}%
+                          </td>
+                        )}
                         <td className="px-4 py-3 text-right text-gray-600 dark:text-gray-300">
                           {item.discount_percent || 0}%
                         </td>
@@ -4671,41 +4868,80 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
               </table>
             </div>
           </div>
-        )}
+        );
+        })()}
 
-        {/* Totaux */}
+        {/* Totaux : en mode HT uniquement Total HT, pas de TVA ni TTC */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Totaux</h3>
           <div className="space-y-3">
-            <div className="flex justify-between text-gray-700 dark:text-gray-300">
-              <span>Total HT après remise</span>
-                <span>
-                  {Number(selectedQuote.total_ht || 0).toFixed(2)}{' '}
-                  {selectedQuote.currency_symbol || '€'}
-                </span>
-            </div>
-            {selectedQuote.global_discount_percent > 0 && (
-              <div className="flex justify-between text-gray-600 dark:text-gray-400 text-sm">
-                <span>Remise globale ({selectedQuote.global_discount_percent}%)</span>
-                <span>-</span>
-              </div>
-            )}
-            <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
-              <div className="flex justify-between font-semibold text-gray-700 dark:text-gray-300">
-                <span>Total TVA</span>
+            {selectedQuote.mode_calcul === 'ht' ? (
+              (() => {
+                const totalHT = Number(selectedQuote.total_ht || 0);
+                const remisePct = parseFloat(selectedQuote.global_discount_percent) || 0;
+                const symbol = selectedQuote.currency_symbol || '€';
+                const hasRemise = remisePct > 0;
+                const totalHTAvantRemiseGlobale = hasRemise ? totalHT / (1 - remisePct / 100) : totalHT;
+                const montantRemiseGlobale = hasRemise ? totalHTAvantRemiseGlobale * (remisePct / 100) : 0;
+                return (
+                  <>
+                    {hasRemise ? (
+                      <>
+                        <div className="flex justify-between text-gray-700 dark:text-gray-300">
+                          <span>Total HT avant remise</span>
+                          <span>{totalHTAvantRemiseGlobale.toFixed(2)} {symbol}</span>
+                        </div>
+                        <div className="flex justify-between text-gray-700 dark:text-gray-300">
+                          <span>Remise globale ({remisePct}%)</span>
+                          <span>- {montantRemiseGlobale.toFixed(2)} {symbol}</span>
+                        </div>
+                        <div className="flex justify-between text-2xl font-bold text-gray-900 dark:text-white pt-2 border-t-2 border-gray-300 dark:border-gray-600">
+                          <span>Total HT après remise</span>
+                          <span>{totalHT.toFixed(2)} {symbol}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex justify-between text-2xl font-bold text-gray-900 dark:text-white">
+                        <span>Total HT</span>
+                        <span>{totalHT.toFixed(2)} {symbol}</span>
+                      </div>
+                    )}
+                  </>
+                );
+              })()
+            ) : (
+              <>
+                <div className="flex justify-between text-gray-700 dark:text-gray-300">
+                  <span>Total HT après remise</span>
                   <span>
-                    {Number(selectedQuote.total_vat || 0).toFixed(2)}{' '}
+                    {Number(selectedQuote.total_ht || 0).toFixed(2)}{' '}
                     {selectedQuote.currency_symbol || '€'}
                   </span>
-              </div>
-            </div>
-            <div className="flex justify-between text-2xl font-bold text-gray-900 dark:text-white pt-3 border-t-2 border-gray-300 dark:border-gray-600">
-              <span>Total TTC</span>
-                <span>
-                  {Number(selectedQuote.total_ttc || 0).toFixed(2)}{' '}
-                  {selectedQuote.currency_symbol || '€'}
-                </span>
-            </div>
+                </div>
+                {selectedQuote.global_discount_percent > 0 && (
+                  <div className="flex justify-between text-gray-600 dark:text-gray-400 text-sm">
+                    <span>Remise globale ({selectedQuote.global_discount_percent}%)</span>
+                    <span>-</span>
+                  </div>
+                )}
+                <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
+                  <div className="flex justify-between font-semibold text-gray-700 dark:text-gray-300">
+                    <span>Total TVA</span>
+                    <span>
+                      {Number(selectedQuote.total_vat || 0).toFixed(2)}{' '}
+                      {selectedQuote.currency_symbol || '€'}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex justify-between text-2xl font-bold text-gray-900 dark:text-white pt-3 border-t-2 border-gray-300 dark:border-gray-600">
+                  <span>Total TTC</span>
+                  <span>
+                    {Number(selectedQuote.total_ttc || 0).toFixed(2)}{' '}
+                    {selectedQuote.currency_symbol || '€'}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         </div>
         </div>
@@ -4721,11 +4957,13 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
             const quoteDate =
               selectedQuote.date ? new Date(selectedQuote.date).toLocaleDateString() : '-';
 
+            const baseUploadsUrl = API_URL.replace('/api', '');
+
             const companyLogoUrl = (() => {
               if (layoutConfig.logo_url) return layoutConfig.logo_url;
               if (layoutConfig.logo_file_path) {
                 const relativePath = layoutConfig.logo_file_path.replace(/^uploads[\\/]/, '');
-                return `/uploads/${relativePath}`;
+                return `${baseUploadsUrl}/uploads/${relativePath}`;
               }
               return null;
             })();
@@ -4737,10 +4975,13 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
               if (clientForQuote.logo_url) return clientForQuote.logo_url;
               if (clientForQuote.logo_file_path) {
                 const relativePath = clientForQuote.logo_file_path.replace(/^uploads[\\/]/, '');
-                return `/uploads/${relativePath}`;
+                return `${baseUploadsUrl}/uploads/${relativePath}`;
               }
               return null;
             })();
+
+            const pdfLogoDisplay = getPdfLogoDisplay(companyLogoUrl, clientLogoUrl);
+            const LOGO_MAX_HEIGHT_PX = 60;
 
             const currentUser = userWithSignature || user;
             const signatureImageUrl = (() => {
@@ -4749,7 +4990,7 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
               }
               if (currentUser?.signature_file_path) {
                 const relativePath = currentUser.signature_file_path.replace(/^uploads[\\/]/, '');
-                return `/uploads/${relativePath}`;
+                return `${baseUploadsUrl}/uploads/${relativePath}`;
               }
               return null;
             })();
@@ -4824,27 +5065,45 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                       paddingBottom: `${footerHeight}px`
                     }}
                   >
-                    {/* En-tête avec logos */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
-                      <div style={{ height: '200px', display: 'flex', alignItems: 'center' }}>
-                        {companyLogoUrl && (
-                          <img
-                            src={companyLogoUrl}
-                            alt="Logo entreprise"
-                            style={{ height: '200px', objectFit: 'contain' }}
-                          />
+                    {/* En-tête avec logos : affiché uniquement si logo entreprise présent ; client à gauche, entreprise à droite si les deux ; sinon entreprise centrée */}
+                    {pdfLogoDisplay.showLogoHeader && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: pdfLogoDisplay.companyCenteredOnly ? 'center' : 'space-between',
+                          alignItems: 'center',
+                          marginBottom: '40px',
+                          minHeight: `${LOGO_MAX_HEIGHT_PX}px`
+                        }}
+                      >
+                        {pdfLogoDisplay.bothLogos ? (
+                          <>
+                            <div style={{ maxHeight: `${LOGO_MAX_HEIGHT_PX}px`, display: 'flex', alignItems: 'center' }}>
+                              <PdfLogoImage
+                                src={pdfLogoDisplay.clientLogoUrl}
+                                alt="Logo client"
+                                style={{ maxHeight: `${LOGO_MAX_HEIGHT_PX}px`, width: 'auto', objectFit: 'contain' }}
+                              />
+                            </div>
+                            <div style={{ maxHeight: `${LOGO_MAX_HEIGHT_PX}px`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+                              <PdfLogoImage
+                                src={pdfLogoDisplay.companyLogoUrl}
+                                alt="Logo entreprise"
+                                style={{ maxHeight: `${LOGO_MAX_HEIGHT_PX}px`, width: 'auto', objectFit: 'contain' }}
+                              />
+                            </div>
+                          </>
+                        ) : (
+                          <div style={{ maxHeight: `${LOGO_MAX_HEIGHT_PX}px`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <PdfLogoImage
+                              src={pdfLogoDisplay.companyLogoUrl}
+                              alt="Logo entreprise"
+                              style={{ maxHeight: `${LOGO_MAX_HEIGHT_PX}px`, width: 'auto', objectFit: 'contain' }}
+                            />
+                          </div>
                         )}
                       </div>
-                      <div style={{ height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                        {clientLogoUrl && (
-                          <img
-                            src={clientLogoUrl}
-                            alt="Logo client"
-                            style={{ height: '200px', objectFit: 'contain' }}
-                          />
-                        )}
-                      </div>
-                    </div>
+                    )}
 
                     {/* Date */}
                     <p style={{ textAlign: 'right', fontSize: '14px', color: '#4b5563', marginBottom: '0px' }}>
@@ -4958,8 +5217,11 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                       </div>
                     )}
 
-                    {/* Lignes du devis - Tableau complet */}
-                    {selectedQuote.items && selectedQuote.items.length > 0 && (
+                    {/* Lignes du devis - Tableau complet (PDF) */}
+                    {selectedQuote.items && selectedQuote.items.length > 0 && (() => {
+                      const isPdfModeHT = selectedQuote.mode_calcul === 'ht';
+                      const hasLineDiscount = selectedQuote.items.some(item => (parseFloat(item.discount_percent) || 0) > 0);
+                      return (
                       <div style={{ marginTop: '30px', marginBottom: '35px', pageBreakInside: 'avoid' }}>
                         <table style={{
                           width: '100%',
@@ -4978,12 +5240,16 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                               <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', fontWeight: '500', color: '#6b7280', textTransform: 'uppercase' }}>
                                 Prix HT
                               </th>
-                              <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', fontWeight: '500', color: '#6b7280', textTransform: 'uppercase' }}>
-                                TVA
-                              </th>
-                              <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', fontWeight: '500', color: '#6b7280', textTransform: 'uppercase' }}>
-                                Remise %
-                              </th>
+                              {!isPdfModeHT && (
+                                <th style={{ padding: '8px', textAlign: 'left', fontSize: '12px', fontWeight: '500', color: '#6b7280', textTransform: 'uppercase' }}>
+                                  TVA
+                                </th>
+                              )}
+                              {hasLineDiscount && (
+                                <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', fontWeight: '500', color: '#6b7280', textTransform: 'uppercase' }}>
+                                  Remise %
+                                </th>
+                              )}
                               <th style={{ padding: '8px', textAlign: 'right', fontSize: '12px', fontWeight: '500', color: '#6b7280', textTransform: 'uppercase' }}>
                                 Total HT
                               </th>
@@ -5021,12 +5287,16 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                                   {Number(item.unit_price).toFixed(2)}{' '}
                                   {selectedQuote.currency_symbol || '€'}
                                 </td>
-                                <td style={{ padding: '8px', color: '#374151', fontSize: '12px' }}>
-                                  {item.vat_rate}%
-                                </td>
-                                <td style={{ padding: '8px', textAlign: 'right', color: '#374151', fontSize: '12px' }}>
-                                  {item.discount_percent || 0}%
-                                </td>
+                                {!isPdfModeHT && (
+                                  <td style={{ padding: '8px', color: '#374151', fontSize: '12px' }}>
+                                    {item.vat_rate}%
+                                  </td>
+                                )}
+                                {hasLineDiscount && (
+                                  <td style={{ padding: '8px', textAlign: 'right', color: '#374151', fontSize: '12px' }}>
+                                    {item.discount_percent || 0}%
+                                  </td>
+                                )}
                                 <td style={{ padding: '8px', textAlign: 'right', fontWeight: '600', color: '#111827', fontSize: '12px' }}>
                                   {Number(item.total_ht).toFixed(2)}{' '}
                                   {selectedQuote.currency_symbol || '€'}
@@ -5036,32 +5306,74 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                           </tbody>
                         </table>
                         
-                        {/* Totaux */}
+                        {/* Totaux : en mode HT uniquement Total HT ; avec remise : montant + % + Total HT après remise */}
                         <div style={{ textAlign: 'right', fontSize: '12px' }}>
-                          <div style={{ marginBottom: '4px' }}>
-                            <span style={{ color: '#374151' }}>Total HT</span>
-                            <span style={{ marginLeft: '16px', fontWeight: '600', color: '#111827' }}>
-                              {Number(selectedQuote.total_ht || 0).toFixed(2)}{' '}
-                              {selectedQuote.currency_symbol || '€'}
-                            </span>
-                          </div>
-                          <div style={{ marginBottom: '4px' }}>
-                            <span style={{ color: '#374151' }}>Total TVA</span>
-                            <span style={{ marginLeft: '16px', fontWeight: '600', color: '#111827' }}>
-                              {Number(selectedQuote.total_vat || 0).toFixed(2)}{' '}
-                              {selectedQuote.currency_symbol || '€'}
-                            </span>
-                          </div>
-                          <div>
-                            <span style={{ color: '#374151' }}>Total TTC</span>
-                            <span style={{ marginLeft: '16px', fontSize: '14px', fontWeight: 'bold', color: '#111827' }}>
-                              {Number(selectedQuote.total_ttc || 0).toFixed(2)}{' '}
-                              {selectedQuote.currency_symbol || '€'}
-                            </span>
-                          </div>
+                          {isPdfModeHT && (parseFloat(selectedQuote.global_discount_percent) || 0) > 0 ? (() => {
+                            const totalHT = Number(selectedQuote.total_ht || 0);
+                            const remisePct = parseFloat(selectedQuote.global_discount_percent) || 0;
+                            const symbol = selectedQuote.currency_symbol || '€';
+                            const totalHTAvantRemiseGlobale = totalHT / (1 - remisePct / 100);
+                            const montantRemiseGlobale = totalHTAvantRemiseGlobale * (remisePct / 100);
+                            return (
+                              <>
+                                <div style={{ marginBottom: '4px' }}>
+                                  <span style={{ color: '#374151' }}>Total HT avant remise</span>
+                                  <span style={{ marginLeft: '16px', fontWeight: '600', color: '#111827' }}>
+                                    {totalHTAvantRemiseGlobale.toFixed(2)} {symbol}
+                                  </span>
+                                </div>
+                                <div style={{ marginBottom: '4px' }}>
+                                  <span style={{ color: '#374151' }}>Remise globale ({remisePct}%)</span>
+                                  <span style={{ marginLeft: '16px', fontWeight: '600', color: '#111827' }}>
+                                    - {montantRemiseGlobale.toFixed(2)} {symbol}
+                                  </span>
+                                </div>
+                                <div style={{ marginBottom: '4px', marginTop: '8px', fontWeight: 'bold', fontSize: '14px' }}>
+                                  <span style={{ color: '#374151' }}>Total HT après remise</span>
+                                  <span style={{ marginLeft: '16px', color: '#111827' }}>
+                                    {totalHT.toFixed(2)} {symbol}
+                                  </span>
+                                </div>
+                              </>
+                            );
+                          })() : isPdfModeHT ? (
+                            <div style={{ marginBottom: '4px' }}>
+                              <span style={{ color: '#374151' }}>Total HT</span>
+                              <span style={{ marginLeft: '16px', fontWeight: '600', color: '#111827' }}>
+                                {Number(selectedQuote.total_ht || 0).toFixed(2)}{' '}
+                                {selectedQuote.currency_symbol || '€'}
+                              </span>
+                            </div>
+                          ) : null}
+                          {!isPdfModeHT && (
+                            <>
+                              <div style={{ marginBottom: '4px' }}>
+                                <span style={{ color: '#374151' }}>Total HT</span>
+                                <span style={{ marginLeft: '16px', fontWeight: '600', color: '#111827' }}>
+                                  {Number(selectedQuote.total_ht || 0).toFixed(2)}{' '}
+                                  {selectedQuote.currency_symbol || '€'}
+                                </span>
+                              </div>
+                              <div style={{ marginBottom: '4px' }}>
+                                <span style={{ color: '#374151' }}>Total TVA</span>
+                                <span style={{ marginLeft: '16px', fontWeight: '600', color: '#111827' }}>
+                                  {Number(selectedQuote.total_vat || 0).toFixed(2)}{' '}
+                                  {selectedQuote.currency_symbol || '€'}
+                                </span>
+                              </div>
+                              <div>
+                                <span style={{ color: '#374151' }}>Total TTC</span>
+                                <span style={{ marginLeft: '16px', fontSize: '14px', fontWeight: 'bold', color: '#111827' }}>
+                                  {Number(selectedQuote.total_ttc || 0).toFixed(2)}{' '}
+                                  {selectedQuote.currency_symbol || '€'}
+                                </span>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
-                    )}
+                    );
+                    })()}
 
                     {/* Conditions Générales de Ventes */}
                     {selectedQuote.conditions_generales && (
@@ -5115,6 +5427,7 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                             <img
                               src={signatureImageUrl}
                               alt="Signature"
+                              crossOrigin="anonymous"
                               style={{ maxHeight: '96px', objectFit: 'contain', display: 'inline-block' }}
                             />
                           )}
@@ -5631,6 +5944,28 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
           {/* Informations générales */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Informations générales</h3>
+            <div className="flex items-center gap-4 mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Mode de calcul des prix :</span>
+              <div className="flex rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600">
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, mode_calcul: 'ht' })}
+                  className={`px-4 py-2 text-sm font-medium ${formData.mode_calcul === 'ht' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}`}
+                >
+                  HT
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, mode_calcul: 'ttc' })}
+                  className={`px-4 py-2 text-sm font-medium ${formData.mode_calcul === 'ttc' ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}`}
+                >
+                  TTC
+                </button>
+              </div>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                {formData.mode_calcul === 'ht' ? 'Prix unitaires saisis en HT' : 'Prix unitaires saisis en TTC'}
+              </span>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -5796,8 +6131,10 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Produit</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Quantité</th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Prix HT</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">TVA</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{formData.mode_calcul === 'ttc' ? 'Prix TTC' : 'Prix HT'}</th>
+                      {formData.mode_calcul === 'ttc' && (
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">TVA</th>
+                      )}
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Remise %</th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Total HT</th>
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
@@ -5807,8 +6144,12 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                     {quoteItems.map((item, index) => {
                       const qty = parseFloat(item.quantity) || 0;
                       const prixHT = parseFloat(item.unit_price) || 0;
+                      const tvaRate = parseFloat(item.vat_rate) || 0;
                       const discount = parseFloat(item.discount_percent) || 0;
                       const exchangeRate = parseFloat(item.exchange_rate) || 1.0;
+                      const isModeTTC = formData.mode_calcul === 'ttc';
+                      // En mode TTC, unit_price est stocké en HT ; pour l'affichage on utilise TTC = HT * (1 + TVA/100)
+                      const prixTTC = prixHT * (1 + tvaRate / 100);
                       
                       // Vérifier si la devise du produit est différente de la devise du devis
                       const productCurrencyId = item.product_currency_id;
@@ -5819,7 +6160,7 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                       const productCurrency = currencies.find(c => c.id === productCurrencyId);
                       const quoteCurrency = currencies.find(c => c.id === quoteCurrencyId);
                       
-                      // Convertir le prix dans la devise du devis
+                      // Convertir le prix dans la devise du devis (toujours en HT pour le calcul)
                       const prixHTConverti = prixHT * exchangeRate;
                       const totalLigneAvantRemise = qty * prixHTConverti;
                       const montantRemise = (totalLigneAvantRemise * discount) / 100;
@@ -5862,24 +6203,39 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex flex-col gap-1">
+                                {needsConversion && (
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                                    {isModeTTC ? 'Prix TTC (devise produit)' : 'Prix HT (devise produit)'}
+                                  </span>
+                                )}
                                 <input
                                   type="number"
                                   step="0.01"
                                   min="0"
-                                  value={item.unit_price}
-                                  onChange={(e) => updateQuoteItem(index, 'unit_price', e.target.value)}
+                                  value={isModeTTC ? (Number.isFinite(prixTTC) ? prixTTC : '') : item.unit_price}
+                                  onChange={(e) => {
+                                    const v = parseFloat(e.target.value);
+                                    if (isModeTTC && Number.isFinite(v) && tvaRate >= 0) {
+                                      const ht = v / (1 + tvaRate / 100);
+                                      updateQuoteItem(index, 'unit_price', ht);
+                                    } else {
+                                      updateQuoteItem(index, 'unit_price', e.target.value);
+                                    }
+                                  }}
                                   className="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white text-right"
                                 />
                                 {needsConversion && (
                                   <span className="text-xs text-gray-500 dark:text-gray-400">
-                                    = {prixHTConverti.toFixed(2)} {quoteCurrency?.symbol || '€'}
+                                    = {isModeTTC ? (prixHTConverti * (1 + tvaRate / 100)).toFixed(2) : prixHTConverti.toFixed(2)} {quoteCurrency?.symbol || '€'} (devise devis)
                                   </span>
                                 )}
                               </div>
                             </td>
-                            <td className="px-4 py-3">
-                              <span className="text-gray-600 dark:text-gray-400">{item.vat_rate}%</span>
-                            </td>
+                            {formData.mode_calcul === 'ttc' && (
+                              <td className="px-4 py-3">
+                                <span className="text-gray-600 dark:text-gray-400">{item.vat_rate}%</span>
+                              </td>
+                            )}
                             <td className="px-4 py-3">
                               <input
                                 type="number"
@@ -5947,61 +6303,111 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
             )}
           </div>
 
-          {/* Totaux */}
+          {/* Totaux : en mode HT pas de TVA ni TTC ; en mode TTC affichage complet */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Totaux</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Totaux ({quoteCurrency?.code || 'devise du devis'})</h3>
             <div className="space-y-3">
-              <div className="flex justify-between text-gray-700 dark:text-gray-300">
-                <span>Total HT avant remise</span>
-                <span>{totals.totalHTAvantRemise.toFixed(2)} €</span>
-              </div>
-              <div className="flex justify-between text-gray-700 dark:text-gray-300">
-                <span>Total HT après remise</span>
-                <span>{totals.totalHTApresRemise.toFixed(2)} €</span>
-              </div>
-              
-              <div className="mt-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Remise globale (optionnelle)
-                  </label>
-                  <select
-                    value={formData.global_discount_type}
-                    onChange={(e) => setFormData({...formData, global_discount_type: e.target.value})}
-                    className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white"
-                  >
-                    <option value="%">%</option>
-                    <option value="€">€</option>
-                  </select>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={formData.global_discount_percent}
-                    onChange={(e) => setFormData({...formData, global_discount_percent: e.target.value})}
-                    className="w-24 px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-                  />
-                </div>
-              </div>
-              
-              <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
-                <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">Détail TVA</div>
-                {Object.entries(totals.vatDetails).map(([key, vat]) => (
-                  <div key={key} className="flex justify-between text-sm text-gray-700 dark:text-gray-300 mb-1">
-                    <span>TVA {vat.rate}%</span>
-                    <span>{vat.amount.toFixed(2)} €</span>
+              {formData.mode_calcul === 'ht' ? (
+                /* Mode HT : Total HT seul, ou avec remise globale : montant remise + % + Total HT après remise */
+                <>
+                  {(parseFloat(formData.global_discount_percent) || 0) > 0 ? (
+                    <>
+                      <div className="flex justify-between text-gray-700 dark:text-gray-300">
+                        <span>Total HT avant remise</span>
+                        <span>{totals.totalHTAvantRemiseGlobale.toFixed(2)} {quoteCurrencySymbol}</span>
+                      </div>
+                      <div className="flex justify-between text-gray-700 dark:text-gray-300">
+                        <span>Remise globale ({(formData.global_discount_percent || 0)}%)</span>
+                        <span>- {totals.montantRemiseGlobale.toFixed(2)} {quoteCurrencySymbol}</span>
+                      </div>
+                      <div className="flex justify-between text-2xl font-bold text-gray-900 dark:text-white pt-2 border-t-2 border-gray-300 dark:border-gray-600">
+                        <span>Total HT après remise</span>
+                        <span>{totals.totalHTApresRemise.toFixed(2)} {quoteCurrencySymbol}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex justify-between text-2xl font-bold text-gray-900 dark:text-white">
+                      <span>Total HT</span>
+                      <span>{totals.totalHTApresRemise.toFixed(2)} {quoteCurrencySymbol}</span>
+                    </div>
+                  )}
+                  <div className="mt-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Remise globale (optionnelle)
+                      </label>
+                      <select
+                        value={formData.global_discount_type}
+                        onChange={(e) => setFormData({...formData, global_discount_type: e.target.value})}
+                        className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white"
+                      >
+                        <option value="%">%</option>
+                        <option value="€">€</option>
+                      </select>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={formData.global_discount_percent}
+                        onChange={(e) => setFormData({...formData, global_discount_percent: e.target.value})}
+                        className="w-24 px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
                   </div>
-                ))}
-                <div className="flex justify-between font-semibold text-gray-700 dark:text-gray-300 mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-                  <span>Total TVA</span>
-                  <span>{totals.totalTVA.toFixed(2)} €</span>
-                </div>
-              </div>
-              
-              <div className="flex justify-between text-2xl font-bold text-gray-900 dark:text-white pt-3 border-t-2 border-gray-300 dark:border-gray-600">
-                <span>Total TTC</span>
-                <span>{totals.totalTTC.toFixed(2)} €</span>
-              </div>
+                </>
+              ) : (
+                /* Mode TTC : affichage complet */
+                <>
+                  <div className="flex justify-between text-gray-700 dark:text-gray-300">
+                    <span>Total HT avant remise</span>
+                    <span>{totals.totalHTAvantRemise.toFixed(2)} {quoteCurrencySymbol}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-700 dark:text-gray-300">
+                    <span>Total HT après remise</span>
+                    <span>{totals.totalHTApresRemise.toFixed(2)} {quoteCurrencySymbol}</span>
+                  </div>
+                  <div className="mt-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Remise globale (optionnelle)
+                      </label>
+                      <select
+                        value={formData.global_discount_type}
+                        onChange={(e) => setFormData({...formData, global_discount_type: e.target.value})}
+                        className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white"
+                      >
+                        <option value="%">%</option>
+                        <option value="€">€</option>
+                      </select>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={formData.global_discount_percent}
+                        onChange={(e) => setFormData({...formData, global_discount_percent: e.target.value})}
+                        className="w-24 px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                  <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
+                    <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">Détail TVA</div>
+                    {Object.entries(totals.vatDetails).map(([key, vat]) => (
+                      <div key={key} className="flex justify-between text-sm text-gray-700 dark:text-gray-300 mb-1">
+                        <span>TVA {vat.rate}%</span>
+                        <span>{vat.amount.toFixed(2)} {quoteCurrencySymbol}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between font-semibold text-gray-700 dark:text-gray-300 mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                      <span>Total TVA</span>
+                      <span>{totals.totalTVA.toFixed(2)} {quoteCurrencySymbol}</span>
+                    </div>
+                  </div>
+                  <div className="flex justify-between text-2xl font-bold text-gray-900 dark:text-white pt-3 border-t-2 border-gray-300 dark:border-gray-600">
+                    <span>Total TTC</span>
+                    <span>{totals.totalTTC.toFixed(2)} {quoteCurrencySymbol}</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -6212,7 +6618,7 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                     Devise
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-                    Montant TTC
+                    Montant HT
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
                     Statut
@@ -6238,8 +6644,8 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                       {quote.currency_code ? `${quote.currency_code} ${quote.currency_symbol || ''}` : '-'}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-right font-semibold text-gray-900 dark:text-white">
-                      {quote.total_ttc
-                        ? `${Number(quote.total_ttc).toFixed(2)}${quote.currency_symbol || ''}`
+                      {quote.total_ht
+                        ? `${Number(quote.total_ht).toFixed(2)}${quote.currency_symbol || ''}`
                         : '-'}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -6712,6 +7118,9 @@ function ConfigPage() {
             />
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               Si une URL est renseignée, elle sera utilisée comme logo prioritaire.
+            </p>
+            <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
+              Pour que le logo apparaisse correctement dans le PDF des devis, il est fortement recommandé d&apos;utiliser un fichier téléversé plutôt qu&apos;une URL externe.
             </p>
           </div>
 

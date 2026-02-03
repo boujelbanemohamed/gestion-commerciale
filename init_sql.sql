@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS quotes (
     currency_id INTEGER REFERENCES currencies(id) ON DELETE SET NULL,
     conditions_generales TEXT,
     global_discount_percent DECIMAL(5,2) DEFAULT 0,
+    mode_calcul VARCHAR(10) DEFAULT 'ttc',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -200,10 +201,10 @@ INSERT INTO products (reference, name, description, category_id, price_ht, vat_r
 ('PRD-003', 'Casque Audio ProSound', 'Casque audio professionnel', 3, 165.83, 3, 1);
 
 -- Clients de test
-INSERT INTO clients (name, email, phone, address, city, country) VALUES
-('Alice Martin', 'alice.martin@example.com', '01 23 45 67 89', '1 Rue de Paris', 'Paris', 'France'),
-('Bob Dupont', 'bob.dupont@example.com', '06 11 22 33 44', '2 Avenue de Lyon', 'Lyon', 'France'),
-('Carla Moreau', 'carla.moreau@example.com', '04 98 76 54 32', '3 Boulevard de Marseille', 'Marseille', 'France');
+INSERT INTO clients (name, email, phone, address, city, postal_code, country) VALUES
+('Alice Martin', 'alice.martin@example.com', '01 23 45 67 89', '1 Rue de Paris', 'Paris', '75001', 'France'),
+('Bob Dupont', 'bob.dupont@example.com', '06 11 22 33 44', '2 Avenue de Lyon', 'Lyon', '69001', 'France'),
+('Carla Moreau', 'carla.moreau@example.com', '04 98 76 54 32', '3 Boulevard de Marseille', 'Marseille', '13001', 'France');
 
 -- Configuration SMTP
 INSERT INTO app_config (config_key, config_value) VALUES 

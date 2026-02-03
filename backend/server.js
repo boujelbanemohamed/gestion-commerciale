@@ -66,7 +66,7 @@ const upload = multer({
   }
 });
 
-// Storage pour les signatures utilisateurs
+// Storage pour les signatures utilisateurs (aucun redimensionnement ni compression : fichier enregistré tel quel)
 const userSignatureStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, userSignaturesDir);
@@ -102,15 +102,23 @@ const uploadClientLogo = multer({
   }
 });
 
-// Middleware
-app.use(helmet());
+// Middleware : désactiver crossOriginResourcePolicy de Helmet pour pouvoir
+// autoriser l'affichage des images /uploads depuis le frontend (autre origine en dev)
+app.use(helmet({
+  crossOriginResourcePolicy: false
+}));
 app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Servir les fichiers statiques (signatures, pièces jointes, etc.)
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Pas de redimensionnement ni compression : les fichiers sont servis tels quels.
+app.use('/uploads', (req, res, next) => {
+  res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.set('Cache-Control', 'no-store'); // évite 304 et affichage d'une ancienne image
+  next();
+}, express.static(path.join(__dirname, 'uploads')));
 
 // Middleware pour attacher pool à req
 app.use((req, res, next) => {
@@ -285,7 +293,7 @@ app.put('/api/auth/profile', async (req, res) => {
 // Route pour uploader la signature de l'utilisateur connecté
 app.post('/api/auth/profile/signature', uploadUserSignature.single('file'), async (req, res) => {
   try {
-    const { userId, signature_text, signature_link } = req.body;
+    const { userId, signature_text, signature_link, clear_file } = req.body;
 
     if (!userId) {
       return res.status(400).json({ error: 'ID utilisateur requis' });
@@ -314,6 +322,10 @@ app.post('/api/auth/profile/signature', uploadUserSignature.single('file'), asyn
       const relativePath = path.relative(__dirname, req.file.path);
       updates.push(`signature_file_path = $${paramIndex++}`);
       values.push(relativePath);
+    } else if (clear_file === 'true') {
+      // Suppression explicite du fichier de signature
+      updates.push(`signature_file_path = $${paramIndex++}`);
+      values.push(null);
     }
 
     if (updates.length === 0) {
@@ -937,6 +949,7 @@ app.post('/api/quotes', async (req, res) => {
       first_page_text,
       introduction_text,
       global_discount_percent,
+      mode_calcul,
       items 
     } = req.body;
     
@@ -956,11 +969,13 @@ app.post('/api/quotes', async (req, res) => {
     if (items && Array.isArray(items) && items.length > 0) {
       items.forEach(item => {
         const qty = parseFloat(item.quantity) || 0;
-        const prixHT = parseFloat(item.unit_price) || 0;
+        const unitPriceProduct = parseFloat(item.unit_price) || 0;
         const discount = parseFloat(item.discount_percent) || 0;
         const tva = parseFloat(item.vat_rate) || 0;
-        
-        const totalLigneAvantRemise = qty * prixHT;
+        const exchangeRate = parseFloat(item.exchange_rate) || 1.0;
+        // Totaux du devis : toujours en devise du devis (conversion appliquée)
+        const prixHTQuote = unitPriceProduct * exchangeRate;
+        const totalLigneAvantRemise = qty * prixHTQuote;
         const montantRemise = (totalLigneAvantRemise * discount) / 100;
         const totalLigneHT = totalLigneAvantRemise - montantRemise;
         const montantTVA = (totalLigneHT * tva) / 100;
@@ -977,13 +992,14 @@ app.post('/api/quotes', async (req, res) => {
     totalHTApresRemise = totalHTApresRemise - montantRemiseGlobale;
     const totalTTC = totalHTApresRemise + totalTVA;
     
-    // Créer le devis
+    // Créer le devis (mode_calcul: 'ht' = prix en HT, 'ttc' = prix en TTC)
+    const modeCalcul = (mode_calcul === 'ht' || mode_calcul === 'ttc') ? mode_calcul : 'ttc';
     const result = await client.query(
       `INSERT INTO quotes (
         quote_number, client_id, date, valid_until, status, 
         currency_id, conditions_generales, first_page_text, introduction_text, global_discount_percent,
-        total_ht, total_vat, total_ttc
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
+        mode_calcul, total_ht, total_vat, total_ttc
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
       [
         quoteNumber, 
         client_id, 
@@ -995,6 +1011,7 @@ app.post('/api/quotes', async (req, res) => {
         first_page_text || null,
         introduction_text || null,
         remiseGlobale,
+        modeCalcul,
         totalHTApresRemise,
         totalTVA,
         totalTTC
@@ -1004,19 +1021,20 @@ app.post('/api/quotes', async (req, res) => {
     const quoteId = result.rows[0].id;
     
     // Créer les lignes de devis
+    // unit_price est TOUJOURS stocké en devise produit ; la conversion sert uniquement au calcul des totaux (total_ht, total_ttc)
     if (items && Array.isArray(items) && items.length > 0) {
       for (const item of items) {
         const qty = parseFloat(item.quantity) || 0;
-        let prixHT = parseFloat(item.unit_price) || 0;
+        const unitPriceProduct = parseFloat(item.unit_price) || 0;
         const discount = parseFloat(item.discount_percent) || 0;
         const tva = parseFloat(item.vat_rate) || 0;
         const exchangeRate = parseFloat(item.exchange_rate) || 1.0;
         const productCurrencyId = item.product_currency_id || null;
         
-        // Convertir le prix dans la devise du devis
-        prixHT = prixHT * exchangeRate;
+        // Convertir le prix dans la devise du devis pour les totaux uniquement
+        const prixHTQuote = unitPriceProduct * exchangeRate;
         
-        const totalLigneAvantRemise = qty * prixHT;
+        const totalLigneAvantRemise = qty * prixHTQuote;
         const montantRemise = (totalLigneAvantRemise * discount) / 100;
         const totalLigneHT = totalLigneAvantRemise - montantRemise;
         const montantTVA = (totalLigneHT * tva) / 100;
@@ -1033,7 +1051,7 @@ app.post('/api/quotes', async (req, res) => {
             item.product_id || null,
             item.product_name || '',
             qty,
-            prixHT,
+            unitPriceProduct,
             tva,
             discount,
             totalLigneHT,
@@ -1098,6 +1116,7 @@ app.put('/api/quotes/:id', async (req, res) => {
       first_page_text,
       introduction_text,
       global_discount_percent,
+      mode_calcul,
       items 
     } = req.body;
     
@@ -1115,15 +1134,13 @@ app.put('/api/quotes/:id', async (req, res) => {
     if (items && Array.isArray(items) && items.length > 0) {
       items.forEach(item => {
         const qty = parseFloat(item.quantity) || 0;
-        let prixHT = parseFloat(item.unit_price) || 0;
+        const unitPriceProduct = parseFloat(item.unit_price) || 0;
         const discount = parseFloat(item.discount_percent) || 0;
         const tva = parseFloat(item.vat_rate) || 0;
         const exchangeRate = parseFloat(item.exchange_rate) || 1.0;
-        
-        // Convertir le prix dans la devise du devis
-        prixHT = prixHT * exchangeRate;
-        
-        const totalLigneAvantRemise = qty * prixHT;
+        // Totaux du devis : toujours en devise du devis (conversion appliquée)
+        const prixHTQuote = unitPriceProduct * exchangeRate;
+        const totalLigneAvantRemise = qty * prixHTQuote;
         const montantRemise = (totalLigneAvantRemise * discount) / 100;
         const totalLigneHT = totalLigneAvantRemise - montantRemise;
         const montantTVA = (totalLigneHT * tva) / 100;
@@ -1140,14 +1157,15 @@ app.put('/api/quotes/:id', async (req, res) => {
     totalHTApresRemise = totalHTApresRemise - montantRemiseGlobale;
     const totalTTC = totalHTApresRemise + totalTVA;
     
-    // Mettre à jour le devis
+    // Mettre à jour le devis (mode_calcul: 'ht' | 'ttc')
+    const modeCalcul = (mode_calcul === 'ht' || mode_calcul === 'ttc') ? mode_calcul : 'ttc';
     await client.query(
       `UPDATE quotes SET
         quote_number = COALESCE(NULLIF($1, ''), quote_number),
         client_id = $2, date = $3, valid_until = $4, status = $5,
         currency_id = $6, conditions_generales = $7, first_page_text = $8, introduction_text = $9, global_discount_percent = $10,
-        total_ht = $11, total_vat = $12, total_ttc = $13, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $14`,
+        mode_calcul = $11, total_ht = $12, total_vat = $13, total_ttc = $14, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $15`,
       [
         (quote_number || '').trim(),
         client_id, 
@@ -1159,6 +1177,7 @@ app.put('/api/quotes/:id', async (req, res) => {
         first_page_text || null,
         introduction_text || null,
         remiseGlobale,
+        modeCalcul,
         totalHTApresRemise,
         totalTVA,
         totalTTC,
@@ -1170,19 +1189,20 @@ app.put('/api/quotes/:id', async (req, res) => {
     await client.query('DELETE FROM quote_items WHERE quote_id = $1', [id]);
     
     // Créer les nouvelles lignes de devis
+    // unit_price est TOUJOURS stocké en devise produit ; la conversion sert uniquement au calcul des totaux
     if (items && Array.isArray(items) && items.length > 0) {
       for (const item of items) {
         const qty = parseFloat(item.quantity) || 0;
-        let prixHT = parseFloat(item.unit_price) || 0;
+        const unitPriceProduct = parseFloat(item.unit_price) || 0;
         const discount = parseFloat(item.discount_percent) || 0;
         const tva = parseFloat(item.vat_rate) || 0;
         const exchangeRate = parseFloat(item.exchange_rate) || 1.0;
         const productCurrencyId = item.product_currency_id || null;
         
-        // Convertir le prix dans la devise du devis
-        prixHT = prixHT * exchangeRate;
+        // Convertir le prix dans la devise du devis pour les totaux uniquement
+        const prixHTQuote = unitPriceProduct * exchangeRate;
         
-        const totalLigneAvantRemise = qty * prixHT;
+        const totalLigneAvantRemise = qty * prixHTQuote;
         const montantRemise = (totalLigneAvantRemise * discount) / 100;
         const totalLigneHT = totalLigneAvantRemise - montantRemise;
         const montantTVA = (totalLigneHT * tva) / 100;
@@ -1199,7 +1219,7 @@ app.put('/api/quotes/:id', async (req, res) => {
             item.product_id || null,
             item.product_name || '',
             qty,
-            prixHT,
+            unitPriceProduct,
             tva,
             discount,
             totalLigneHT,
@@ -2118,33 +2138,47 @@ app.post('/api/config/layout/logo', uploadClientLogo.single('file'), async (req,
 
 // ==================== ROUTES STATISTIQUES ====================
 app.get('/api/stats/dashboard', async (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   try {
     const clients = await pool.query('SELECT COUNT(*) FROM clients');
     const products = await pool.query('SELECT COUNT(*) FROM products');
     const quotes = await pool.query('SELECT COUNT(*) FROM quotes WHERE status = \'pending\'');
-    // CA du mois, ventilé par devise
+    // Devises configurées (même source que Configuration > Devises) : ordre par nom
+    const configuredCurrencies = await pool.query(
+      'SELECT id, code, name, symbol FROM currencies ORDER BY name'
+    );
+    // CA du mois : uniquement devis ACCEPTÉS, en HT, groupé par devise (uniquement devises présentes dans les devis)
     const revenueByCurrency = await pool.query(`
       SELECT 
         curr.code as currency_code,
-        curr.symbol as currency_symbol,
-        COALESCE(SUM(q.total_ttc), 0) as total
+        COALESCE(curr.symbol, '') as currency_symbol,
+        COALESCE(SUM(q.total_ht), 0) as total
       FROM quotes q
-      LEFT JOIN currencies curr ON q.currency_id = curr.id
+      INNER JOIN currencies curr ON q.currency_id = curr.id
       WHERE q.status = 'accepted'
         AND EXTRACT(MONTH FROM q.date) = EXTRACT(MONTH FROM CURRENT_DATE)
         AND EXTRACT(YEAR FROM q.date) = EXTRACT(YEAR FROM CURRENT_DATE)
-      GROUP BY curr.code, curr.symbol
-      ORDER BY curr.code
+      GROUP BY curr.id, curr.code, curr.symbol
     `);
-    
-    // Statistiques par statut et par devise pour le dernier mois (30 derniers jours)
+    const revenueMap = {};
+    revenueByCurrency.rows.forEach(row => {
+      revenueMap[row.currency_code] = parseFloat(row.total);
+    });
+    // Une entrée CA HT par devise configurée (0 si aucun devis accepté dans cette devise ce mois)
+    const revenue_by_currency = configuredCurrencies.rows.map(c => ({
+      currency_code: c.code,
+      currency_symbol: (c.symbol ?? '').trim(),
+      total: revenueMap[c.code] ?? 0
+    }));
+
+    // Statistiques par statut et par devise pour le dernier mois (30 derniers jours), montants en HT
     const quotesByStatus = await pool.query(`
       SELECT 
         q.status,
         curr.code as currency_code,
         curr.symbol as currency_symbol,
         COUNT(*) as count,
-        COALESCE(SUM(q.total_ttc), 0) as total_amount
+        COALESCE(SUM(q.total_ht), 0) as total_amount
       FROM quotes q
       LEFT JOIN currencies curr ON q.currency_id = curr.id
       WHERE q.date >= CURRENT_DATE - INTERVAL '30 days'
@@ -2152,15 +2186,13 @@ app.get('/api/stats/dashboard', async (req, res) => {
       ORDER BY q.status, curr.code
     `);
     
+    // Indicateur : si revenue_by_currency a une entrée par devise configurée (5 devises = 5 cartes sur le dashboard)
+    res.set('X-Dashboard-Currencies', 'all-configured');
     res.json({
       clients: parseInt(clients.rows[0].count),
       products: parseInt(products.rows[0].count),
       quotes_pending: parseInt(quotes.rows[0].count),
-      revenue_by_currency: revenueByCurrency.rows.map(row => ({
-        currency_code: row.currency_code || 'EUR',
-        currency_symbol: row.currency_symbol || '€',
-        total: parseFloat(row.total)
-      })),
+      revenue_by_currency,
       quotes_by_status: quotesByStatus.rows.map(row => ({
         status: row.status,
         currency_code: row.currency_code || 'EUR',
@@ -2186,7 +2218,7 @@ app.get('/api/stats/activity', async (req, res) => {
         curr.code as currency_code,
         curr.symbol as currency_symbol,
         COUNT(*) as count,
-        COALESCE(SUM(q.total_ttc), 0) as total_amount
+        COALESCE(SUM(q.total_ht), 0) as total_amount
       FROM quotes q
       LEFT JOIN currencies curr ON q.currency_id = curr.id
       WHERE 1=1
