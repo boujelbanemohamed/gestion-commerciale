@@ -37,7 +37,7 @@ services:
       dockerfile: Dockerfile
     container_name: gestion_commerciale_backend
     ports:
-      - "${BACKEND_PORT:-5001}:5000"  # Port externe modifié
+      - "${BACKEND_PORT:-5000}:5000"
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       DB_HOST: postgres_gestion
@@ -78,10 +78,10 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - REACT_APP_API_URL=${REACT_APP_API_URL:-http://localhost:5001/api}
+        - REACT_APP_API_URL=${REACT_APP_API_URL:-http://localhost:5000/api}
     container_name: gestion_commerciale_frontend
     ports:
-      - "${FRONTEND_PORT:-3001}:80"  # Port externe modifié
+      - "${FRONTEND_PORT:-3000}:80"
     depends_on:
       backend_gestion:
         condition: service_healthy

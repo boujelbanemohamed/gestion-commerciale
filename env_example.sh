@@ -7,11 +7,11 @@
 # ==================================
 
 # IMPORTANT: Vérifier que ces ports sont libres sur le serveur
-# Utiliser: netstat -tlnp | grep -E "3001|5001|5433"
+# Utiliser: netstat -tlnp | grep -E "3000|5000|5433"
 
-FRONTEND_PORT=3001     # Au lieu de 3000 (probablement déjà utilisé)
-BACKEND_PORT=5001      # Au lieu de 5000 (probablement déjà utilisé)
-DB_PORT=5433           # Au lieu de 5432 (probablement déjà utilisé)
+FRONTEND_PORT=3000
+BACKEND_PORT=5000
+DB_PORT=5433           # Au lieu de 5432 (éviter conflits)
 
 # ==================================
 # BASE DE DONNÉES
@@ -41,7 +41,7 @@ JWT_SECRET=VotreSecretJWTTresSecurise2024ChangezMoi!
 
 # URL de l'API accessible depuis le navigateur
 # Adapter selon votre configuration serveur (IP ou nom de domaine)
-REACT_APP_API_URL=http://VOTRE_IP_SERVEUR:5001/api
+REACT_APP_API_URL=http://VOTRE_IP_SERVEUR:5000/api
 
 # Si vous utilisez un reverse proxy:
 # REACT_APP_API_URL=https://votre-domaine.com/gestion/api
