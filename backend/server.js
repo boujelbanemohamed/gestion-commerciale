@@ -883,6 +883,9 @@ app.get('/api/quotes/:id', async (req, res) => {
     }
     
     const quote = quoteResult.rows[0];
+    const isModeHT = (quote.mode_calcul === 'ht');
+    const remiseGlobalePct = parseFloat(quote.global_discount_percent) || 0;
+    const currencySymbol = quote.currency_symbol || '€';
     
     const itemsResult = await pool.query(
       'SELECT * FROM quote_items WHERE quote_id = $1 ORDER BY id',
@@ -1310,6 +1313,9 @@ app.post('/api/quotes/:id/send-email', async (req, res) => {
     }
     
     const quote = quoteResult.rows[0];
+    const isModeHT = (quote.mode_calcul === 'ht');
+    const remiseGlobalePct = parseFloat(quote.global_discount_percent) || 0;
+    const currencySymbol = quote.currency_symbol || '€';
     
     // Récupérer les lignes de devis
     const itemsResult = await pool.query(
@@ -1329,33 +1335,72 @@ app.post('/api/quotes/:id/send-email', async (req, res) => {
       return res.status(400).json({ error: 'Configuration SMTP incomplète' });
     }
     
-    // Créer le transporteur email
-const transporter = nodemailer.createTransport({
-  host: config.smtp_server,
-  port: parseInt(config.smtp_port),
-  secure: false,
-  auth: {
-    user: config.smtp_user,
-    pass: config.smtp_password,
-  },
-  tls: {
-    rejectUnauthorized: false
-  }
-});
+    // Créer le transporteur email à partir de la configuration SMTP en base
+    const transporter = nodemailer.createTransport({
+      host: smtpConfig.server,
+      port: parseInt(smtpConfig.port, 10),
+      secure: smtpConfig.secure === 'true',
+      auth: {
+        user: smtpConfig.user,
+        pass: smtpConfig.password,
+      },
+      tls: {
+        // On désactive la vérification stricte pour accepter plus de serveurs
+        rejectUnauthorized: false
+      }
+    });
     
-    // Construire le HTML du devis
+    // Construire le HTML des lignes du devis (affichage TVA dépendant du mode HT / TTC)
     let itemsHTML = '';
     itemsResult.rows.forEach(item => {
       itemsHTML += `
         <tr>
           <td style="padding: 8px; border-bottom: 1px solid #ddd;">${item.product_name || '-'}</td>
           <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${item.quantity}</td>
-          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${Number(item.unit_price).toFixed(2)} ${quote.currency_symbol || '€'}</td>
-          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${item.vat_rate}%</td>
-          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${Number(item.total_ht).toFixed(2)} ${quote.currency_symbol || '€'}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${Number(item.unit_price).toFixed(2)} ${currencySymbol}</td>
+          ${!isModeHT ? `<td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${item.vat_rate}%</td>` : ''}
+          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${Number(item.total_ht).toFixed(2)} ${currencySymbol}</td>
         </tr>
       `;
     });
+    
+    // Construire le bloc des totaux selon le mode de calcul
+    let totalsHTML = '';
+    if (isModeHT) {
+      // total_ht en base = total HT après remise globale
+      const totalHTApresRemise = Number(quote.total_ht || 0);
+      if (remiseGlobalePct > 0) {
+        const totalHTAvantRemiseGlobale = totalHTApresRemise / (1 - remiseGlobalePct / 100);
+        const montantRemiseGlobale = totalHTAvantRemiseGlobale * (remiseGlobalePct / 100);
+        totalsHTML = `
+          <div class="totals" style="margin-top: 20px; text-align: right;">
+            <div style="margin-bottom: 4px;">Total HT: ${totalHTAvantRemiseGlobale.toFixed(2)} ${currencySymbol}</div>
+            <div style="margin-bottom: 4px;">Total remise HT (${remiseGlobalePct}%): -${montantRemiseGlobale.toFixed(2)} ${currencySymbol}</div>
+            <div class="total-ttc" style="font-size: 1.3em; font-weight: bold; margin-top: 10px;">
+              Total HT après remise: ${totalHTApresRemise.toFixed(2)} ${currencySymbol}
+            </div>
+          </div>
+        `;
+      } else {
+        totalsHTML = `
+          <div class="totals" style="margin-top: 20px; text-align: right;">
+            <div class="total-ttc" style="font-size: 1.3em; font-weight: bold; margin-top: 10px;">
+              Total HT: ${totalHTApresRemise.toFixed(2)} ${currencySymbol}
+            </div>
+          </div>
+        `;
+      }
+    } else {
+      totalsHTML = `
+        <div class="totals" style="margin-top: 20px; text-align: right;">
+          <div>Total HT: ${Number(quote.total_ht || 0).toFixed(2)} ${currencySymbol}</div>
+          <div>Total TVA: ${Number(quote.total_vat || 0).toFixed(2)} ${currencySymbol}</div>
+          <div class="total-ttc" style="font-size: 1.3em; font-weight: bold; margin-top: 10px;">
+            Total TTC: ${Number(quote.total_ttc || 0).toFixed(2)} ${currencySymbol}
+          </div>
+        </div>
+      `;
+    }
     
     // Message personnalisé (s'il existe)
     const customMessageHTML = message
@@ -1398,7 +1443,7 @@ const transporter = nodemailer.createTransport({
               <th>Produit</th>
               <th style="text-align: right;">Quantité</th>
               <th style="text-align: right;">Prix HT</th>
-              <th style="text-align: right;">TVA</th>
+              ${!isModeHT ? '<th style="text-align: right;">TVA</th>' : ''}
               <th style="text-align: right;">Total HT</th>
             </tr>
           </thead>
@@ -1407,11 +1452,7 @@ const transporter = nodemailer.createTransport({
           </tbody>
         </table>
         
-        <div class="totals">
-          <div>Total HT: ${Number(quote.total_ht || 0).toFixed(2)} ${quote.currency_symbol || '€'}</div>
-          <div>Total TVA: ${Number(quote.total_vat || 0).toFixed(2)} ${quote.currency_symbol || '€'}</div>
-          <div class="total-ttc">Total TTC: ${Number(quote.total_ttc || 0).toFixed(2)} ${quote.currency_symbol || '€'}</div>
-        </div>
+        ${totalsHTML}
         
         ${quote.conditions_generales ? `<div style="margin-top: 30px;"><strong>Conditions Générales:</strong><br>${quote.conditions_generales.replace(/\n/g, '<br>')}</div>` : ''}
       </body>
@@ -1425,13 +1466,25 @@ const transporter = nodemailer.createTransport({
       ccAddresses.push(smtpConfig.current_user_email);
     }
 
+    // Texte brut adapté au mode de calcul pour le corps "text" de l'email
+    let textTotals;
+    if (isModeHT) {
+      const totalHTApresRemise = Number(quote.total_ht || 0);
+      textTotals = `Total HT: ${totalHTApresRemise.toFixed(2)} ${currencySymbol}`;
+      if (remiseGlobalePct > 0) {
+        textTotals += ` (après remise globale de ${remiseGlobalePct}%)`;
+      }
+    } else {
+      textTotals = `Total TTC: ${Number(quote.total_ttc || 0).toFixed(2)} ${currencySymbol}`;
+    }
+
     const mailOptions = {
       from: `"${smtpConfig.sender_name || 'Gestion Commerciale'}" <${smtpConfig.sender_email || smtpConfig.user}>`,
       to: recipientEmails.join(','),
       cc: ccAddresses.length > 0 ? ccAddresses.join(',') : undefined,
       subject: `Devis ${quote.quote_number}`,
       html: emailHTML,
-      text: `Devis ${quote.quote_number}\n\nClient: ${quote.client_name || '-'}\nDate: ${quote.date || '-'}\nTotal TTC: ${Number(quote.total_ttc || 0).toFixed(2)} ${quote.currency_symbol || '€'}${message ? `\n\nMessage:\n${message}` : ''}`
+      text: `Devis ${quote.quote_number}\n\nClient: ${quote.client_name || '-'}\nDate: ${quote.date || '-'}\n${textTotals}${message ? `\n\nMessage:\n${message}` : ''}`
     };
     
     await transporter.sendMail(mailOptions);
@@ -1609,18 +1662,18 @@ app.post('/api/quotes/:id/comments', async (req, res) => {
           });
           
           if (smtpConfig.server && smtpConfig.port && smtpConfig.user && smtpConfig.password) {
-const transporter = nodemailer.createTransport({
-  host: config.smtp_server,
-  port: parseInt(config.smtp_port),
-  secure: false,
-  auth: {
-    user: config.smtp_user,
-    pass: config.smtp_password,
-  },
-  tls: {
-    rejectUnauthorized: false
-  }
-});
+            const transporter = nodemailer.createTransport({
+              host: smtpConfig.server,
+              port: parseInt(smtpConfig.port, 10),
+              secure: smtpConfig.secure === 'true',
+              auth: {
+                user: smtpConfig.user,
+                pass: smtpConfig.password,
+              },
+              tls: {
+                rejectUnauthorized: false
+              }
+            });
             
             const userInfo = await pool.query('SELECT name FROM users WHERE id = $1', [userId]);
             const userName = userInfo.rows[0]?.name || 'Un utilisateur';

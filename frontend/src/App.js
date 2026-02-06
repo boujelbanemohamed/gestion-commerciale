@@ -3919,7 +3919,7 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
     introduction_text: '',
     global_discount_percent: 0,
     global_discount_type: '%',
-    mode_calcul: 'ttc'
+    mode_calcul: 'ht'
   });
   const [quoteItems, setQuoteItems] = useState([]);
 
@@ -4063,7 +4063,7 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
       introduction_text: '',
       global_discount_percent: 0,
       global_discount_type: '%',
-      mode_calcul: 'ttc'
+      mode_calcul: 'ht'
     });
     setQuoteItems([]);
   };
