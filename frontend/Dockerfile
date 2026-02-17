@@ -26,10 +26,19 @@ RUN cat > /etc/nginx/conf.d/default.conf <<'EOF'
 server {
     listen 80;
 
+    # Autoriser des requêtes volumineuses (PDF encodé en base64 dans le body JSON)
+    client_max_body_size 50M;
+
     location / {
         root /usr/share/nginx/html;
         index index.html index.htm;
         try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+
+    location ~* \.(js|css)$ {
+        root /usr/share/nginx/html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
 
     location /api {
@@ -38,6 +47,10 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
+        # Augmenter les timeouts pour les opérations longues (ex: envoi d'emails avec gros PDF)
+        proxy_connect_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
     }
 
     # Proxy des fichiers statiques servis par le backend (signatures, pièces jointes, etc.)

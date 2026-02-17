@@ -12,6 +12,17 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Petit utilitaire pour échapper le HTML dans les emails
+const escapeHtml = (unsafe) => {
+  if (typeof unsafe !== 'string') return '';
+  return unsafe
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+};
+
 // Configuration de la base de données
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -66,7 +77,7 @@ const upload = multer({
   }
 });
 
-// Storage pour les signatures utilisateurs (aucun redimensionnement ni compression : fichier enregistré tel quel)
+// Storage pour les signatures utilisateurs
 const userSignatureStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, userSignaturesDir);
@@ -102,23 +113,16 @@ const uploadClientLogo = multer({
   }
 });
 
-// Middleware : désactiver crossOriginResourcePolicy de Helmet pour pouvoir
-// autoriser l'affichage des images /uploads depuis le frontend (autre origine en dev)
-app.use(helmet({
-  crossOriginResourcePolicy: false
-}));
+// Middleware
+app.use(helmet());
 app.use(cors());
 app.use(morgan('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Augmenter la taille maximale du body pour supporter les gros PDF encodés en base64
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Servir les fichiers statiques (signatures, pièces jointes, etc.)
-// Pas de redimensionnement ni compression : les fichiers sont servis tels quels.
-app.use('/uploads', (req, res, next) => {
-  res.set('Cross-Origin-Resource-Policy', 'cross-origin');
-  res.set('Cache-Control', 'no-store'); // évite 304 et affichage d'une ancienne image
-  next();
-}, express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Middleware pour attacher pool à req
 app.use((req, res, next) => {
@@ -293,7 +297,7 @@ app.put('/api/auth/profile', async (req, res) => {
 // Route pour uploader la signature de l'utilisateur connecté
 app.post('/api/auth/profile/signature', uploadUserSignature.single('file'), async (req, res) => {
   try {
-    const { userId, signature_text, signature_link, clear_file } = req.body;
+    const { userId, signature_text, signature_link } = req.body;
 
     if (!userId) {
       return res.status(400).json({ error: 'ID utilisateur requis' });
@@ -322,10 +326,6 @@ app.post('/api/auth/profile/signature', uploadUserSignature.single('file'), asyn
       const relativePath = path.relative(__dirname, req.file.path);
       updates.push(`signature_file_path = $${paramIndex++}`);
       values.push(relativePath);
-    } else if (clear_file === 'true') {
-      // Suppression explicite du fichier de signature
-      updates.push(`signature_file_path = $${paramIndex++}`);
-      values.push(null);
     }
 
     if (updates.length === 0) {
@@ -353,6 +353,66 @@ app.post('/api/auth/profile/signature', uploadUserSignature.single('file'), asyn
     });
   } catch (error) {
     console.error('Erreur upload signature utilisateur:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Route pour supprimer l'image de signature de l'utilisateur connecté
+app.delete('/api/auth/profile/signature', async (req, res) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'ID utilisateur requis' });
+    }
+
+    const userResult = await pool.query(
+      'SELECT id, email, name, role, signature_text, signature_file_path, signature_link, created_at, updated_at FROM users WHERE id = $1',
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Utilisateur non trouvé' });
+    }
+
+    const user = userResult.rows[0];
+
+    // Supprimer le fichier physique si présent
+    if (user.signature_file_path) {
+      const absolutePath = path.join(__dirname, user.signature_file_path);
+      try {
+        if (fs.existsSync(absolutePath)) {
+          fs.unlinkSync(absolutePath);
+        }
+      } catch (fsError) {
+        console.error('Erreur suppression fichier de signature utilisateur:', fsError);
+      }
+    }
+
+    // Mettre à jour l'utilisateur pour effacer uniquement le fichier de signature
+    const updated = await pool.query(
+      `UPDATE users 
+       SET signature_file_path = NULL, updated_at = CURRENT_TIMESTAMP 
+       WHERE id = $1 
+       RETURNING id, email, name, role, signature_text, signature_file_path, signature_link, created_at, updated_at`,
+      [userId]
+    );
+
+    const row = updated.rows[0];
+
+    res.json({
+      id: row.id,
+      email: row.email,
+      name: row.name,
+      role: (row.role || 'lecteur').toLowerCase(),
+      signature_text: row.signature_text || null,
+      signature_file_path: row.signature_file_path || null,
+      signature_link: row.signature_link || null,
+      created_at: row.created_at,
+      updated_at: row.updated_at
+    });
+  } catch (error) {
+    console.error('Erreur suppression image signature utilisateur:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
@@ -883,9 +943,6 @@ app.get('/api/quotes/:id', async (req, res) => {
     }
     
     const quote = quoteResult.rows[0];
-    const isModeHT = (quote.mode_calcul === 'ht');
-    const remiseGlobalePct = parseFloat(quote.global_discount_percent) || 0;
-    const currencySymbol = quote.currency_symbol || '€';
     
     const itemsResult = await pool.query(
       'SELECT * FROM quote_items WHERE quote_id = $1 ORDER BY id',
@@ -923,8 +980,10 @@ app.get('/api/quotes/:id', async (req, res) => {
       ORDER BY qc.created_at DESC
     `, [id]);
     
+    const modeCalcul = (quote.mode_calcul === 'TTC') ? 'TTC' : 'HT';
     res.json({
       ...quote,
+      mode_calcul: modeCalcul,
       items: itemsResult.rows,
       attachments: attachmentsResult.rows,
       client_contacts: clientContacts,
@@ -955,6 +1014,9 @@ app.post('/api/quotes', async (req, res) => {
       mode_calcul,
       items 
     } = req.body;
+
+    // Mode de calcul (HT ou TTC), défaut HT
+    const modeCalcul = (mode_calcul === 'TTC') ? 'TTC' : 'HT';
     
     // Utiliser le numéro fourni ou en générer un automatiquement
     let quoteNumber = (quote_number || '').trim();
@@ -964,39 +1026,85 @@ app.post('/api/quotes', async (req, res) => {
       quoteNumber = `DEV-${String(count).padStart(6, '0')}`;
     }
     
-    // Calculer les totaux
+    // Calculer les totaux selon le mode
     let totalHTAvantRemise = 0;
     let totalHTApresRemise = 0;
     let totalTVA = 0;
+    let totalTTC = 0;
     
     if (items && Array.isArray(items) && items.length > 0) {
-      items.forEach(item => {
-        const qty = parseFloat(item.quantity) || 0;
-        const unitPriceProduct = parseFloat(item.unit_price) || 0;
-        const discount = parseFloat(item.discount_percent) || 0;
-        const tva = parseFloat(item.vat_rate) || 0;
-        const exchangeRate = parseFloat(item.exchange_rate) || 1.0;
-        // Totaux du devis : toujours en devise du devis (conversion appliquée)
-        const prixHTQuote = unitPriceProduct * exchangeRate;
-        const totalLigneAvantRemise = qty * prixHTQuote;
-        const montantRemise = (totalLigneAvantRemise * discount) / 100;
-        const totalLigneHT = totalLigneAvantRemise - montantRemise;
-        const montantTVA = (totalLigneHT * tva) / 100;
-        
-        totalHTAvantRemise += totalLigneAvantRemise;
-        totalHTApresRemise += totalLigneHT;
-        totalTVA += montantTVA;
-      });
+      if (modeCalcul === 'HT') {
+        // Mode HT : prix unitaire est en HT
+        items.forEach(item => {
+          const qty = parseFloat(item.quantity) || 0;
+          const prixHT = parseFloat(item.unit_price) || 0;
+          const discount = parseFloat(item.discount_percent) || 0;
+          const tva = parseFloat(item.vat_rate) || 0;
+          
+          const totalLigneAvantRemise = qty * prixHT;
+          const montantRemise = (totalLigneAvantRemise * discount) / 100;
+          const totalLigneHT = totalLigneAvantRemise - montantRemise;
+          const montantTVA = (totalLigneHT * tva) / 100;
+          
+          totalHTAvantRemise += totalLigneAvantRemise;
+          totalHTApresRemise += totalLigneHT;
+          totalTVA += montantTVA;
+        });
+      } else {
+        // Mode TTC : prix unitaire est en TTC
+        items.forEach(item => {
+          const qty = parseFloat(item.quantity) || 0;
+          const prixTTC = parseFloat(item.unit_price) || 0;
+          const discount = parseFloat(item.discount_percent) || 0;
+          const tva = parseFloat(item.vat_rate) || 0;
+          
+          const totalTTCLigneAvantRemise = qty * prixTTC;
+          const montantRemise = (totalTTCLigneAvantRemise * discount) / 100;
+          const totalTTCLigneApresRemise = totalTTCLigneAvantRemise - montantRemise;
+          
+          // Rétro-calcul du HT depuis TTC
+          const totalHTLigne = totalTTCLigneApresRemise / (1 + tva / 100);
+          const montantTVA = totalTTCLigneApresRemise - totalHTLigne;
+          
+          totalHTAvantRemise += totalHTLigne;
+          totalHTApresRemise += totalHTLigne;
+          totalTVA += montantTVA;
+          totalTTC += totalTTCLigneApresRemise;
+        });
+      }
     }
     
     // Appliquer la remise globale
     const remiseGlobale = parseFloat(global_discount_percent) || 0;
-    const montantRemiseGlobale = (totalHTApresRemise * remiseGlobale) / 100;
-    totalHTApresRemise = totalHTApresRemise - montantRemiseGlobale;
-    const totalTTC = totalHTApresRemise + totalTVA;
+    if (modeCalcul === 'HT') {
+      const montantRemiseGlobale = (totalHTApresRemise * remiseGlobale) / 100;
+      totalHTApresRemise = totalHTApresRemise - montantRemiseGlobale;
+      // Recalculer la TVA après remise globale
+      totalTVA = 0;
+      if (items && Array.isArray(items) && items.length > 0) {
+        items.forEach(item => {
+          const qty = parseFloat(item.quantity) || 0;
+          const prixHT = parseFloat(item.unit_price) || 0;
+          const discount = parseFloat(item.discount_percent) || 0;
+          const tva = parseFloat(item.vat_rate) || 0;
+          const totalLigneAvantRemise = qty * prixHT;
+          const montantRemise = (totalLigneAvantRemise * discount) / 100;
+          const totalLigneHT = totalLigneAvantRemise - montantRemise;
+          const totalLigneHTApresRemiseGlobale = totalLigneHT * (1 - remiseGlobale / 100);
+          totalTVA += totalLigneHTApresRemiseGlobale * (tva / 100);
+        });
+      }
+      totalTTC = totalHTApresRemise + totalTVA;
+    } else {
+      const montantRemiseGlobale = (totalTTC * remiseGlobale) / 100;
+      totalTTC = totalTTC - montantRemiseGlobale;
+      // Recalculer HT et TVA après remise globale
+      const ratioRemise = 1 - (remiseGlobale / 100);
+      totalHTApresRemise = totalHTApresRemise * ratioRemise;
+      totalTVA = totalTVA * ratioRemise;
+    }
     
-    // Créer le devis (mode_calcul: 'ht' = prix en HT, 'ttc' = prix en TTC)
-    const modeCalcul = (mode_calcul === 'ht' || mode_calcul === 'ttc') ? mode_calcul : 'ttc';
+    // Créer le devis
     const result = await client.query(
       `INSERT INTO quotes (
         quote_number, client_id, date, valid_until, status, 
@@ -1024,20 +1132,19 @@ app.post('/api/quotes', async (req, res) => {
     const quoteId = result.rows[0].id;
     
     // Créer les lignes de devis
-    // unit_price est TOUJOURS stocké en devise produit ; la conversion sert uniquement au calcul des totaux (total_ht, total_ttc)
     if (items && Array.isArray(items) && items.length > 0) {
       for (const item of items) {
         const qty = parseFloat(item.quantity) || 0;
-        const unitPriceProduct = parseFloat(item.unit_price) || 0;
+        let prixHT = parseFloat(item.unit_price) || 0;
         const discount = parseFloat(item.discount_percent) || 0;
         const tva = parseFloat(item.vat_rate) || 0;
         const exchangeRate = parseFloat(item.exchange_rate) || 1.0;
         const productCurrencyId = item.product_currency_id || null;
         
-        // Convertir le prix dans la devise du devis pour les totaux uniquement
-        const prixHTQuote = unitPriceProduct * exchangeRate;
+        // Convertir le prix dans la devise du devis
+        prixHT = prixHT * exchangeRate;
         
-        const totalLigneAvantRemise = qty * prixHTQuote;
+        const totalLigneAvantRemise = qty * prixHT;
         const montantRemise = (totalLigneAvantRemise * discount) / 100;
         const totalLigneHT = totalLigneAvantRemise - montantRemise;
         const montantTVA = (totalLigneHT * tva) / 100;
@@ -1054,7 +1161,7 @@ app.post('/api/quotes', async (req, res) => {
             item.product_id || null,
             item.product_name || '',
             qty,
-            unitPriceProduct,
+            prixHT,
             tva,
             discount,
             totalLigneHT,
@@ -1123,45 +1230,102 @@ app.put('/api/quotes/:id', async (req, res) => {
       items 
     } = req.body;
     
+    // Valider mode_calcul (HT par défaut)
+    const modeCalcul = (mode_calcul === 'TTC') ? 'TTC' : 'HT';
+    
     // Vérifier que le devis existe
     const existingQuote = await client.query('SELECT id FROM quotes WHERE id = $1', [id]);
     if (existingQuote.rows.length === 0) {
       return res.status(404).json({ error: 'Devis non trouvé' });
     }
     
-    // Calculer les totaux
+    // Calculer les totaux selon le mode
     let totalHTAvantRemise = 0;
     let totalHTApresRemise = 0;
     let totalTVA = 0;
+    let totalTTC = 0;
     
     if (items && Array.isArray(items) && items.length > 0) {
-      items.forEach(item => {
-        const qty = parseFloat(item.quantity) || 0;
-        const unitPriceProduct = parseFloat(item.unit_price) || 0;
-        const discount = parseFloat(item.discount_percent) || 0;
-        const tva = parseFloat(item.vat_rate) || 0;
-        const exchangeRate = parseFloat(item.exchange_rate) || 1.0;
-        // Totaux du devis : toujours en devise du devis (conversion appliquée)
-        const prixHTQuote = unitPriceProduct * exchangeRate;
-        const totalLigneAvantRemise = qty * prixHTQuote;
-        const montantRemise = (totalLigneAvantRemise * discount) / 100;
-        const totalLigneHT = totalLigneAvantRemise - montantRemise;
-        const montantTVA = (totalLigneHT * tva) / 100;
-        
-        totalHTAvantRemise += totalLigneAvantRemise;
-        totalHTApresRemise += totalLigneHT;
-        totalTVA += montantTVA;
-      });
+      if (modeCalcul === 'HT') {
+        // Mode HT : prix unitaire est en HT
+        items.forEach(item => {
+          const qty = parseFloat(item.quantity) || 0;
+          let prixHT = parseFloat(item.unit_price) || 0;
+          const discount = parseFloat(item.discount_percent) || 0;
+          const tva = parseFloat(item.vat_rate) || 0;
+          const exchangeRate = parseFloat(item.exchange_rate) || 1.0;
+          
+          // Convertir le prix dans la devise du devis
+          prixHT = prixHT * exchangeRate;
+          
+          const totalLigneAvantRemise = qty * prixHT;
+          const montantRemise = (totalLigneAvantRemise * discount) / 100;
+          const totalLigneHT = totalLigneAvantRemise - montantRemise;
+          const montantTVA = (totalLigneHT * tva) / 100;
+          
+          totalHTAvantRemise += totalLigneAvantRemise;
+          totalHTApresRemise += totalLigneHT;
+          totalTVA += montantTVA;
+        });
+      } else {
+        // Mode TTC : prix unitaire est en TTC
+        items.forEach(item => {
+          const qty = parseFloat(item.quantity) || 0;
+          let prixTTC = parseFloat(item.unit_price) || 0;
+          const discount = parseFloat(item.discount_percent) || 0;
+          const tva = parseFloat(item.vat_rate) || 0;
+          const exchangeRate = parseFloat(item.exchange_rate) || 1.0;
+          
+          // Convertir le prix dans la devise du devis
+          prixTTC = prixTTC * exchangeRate;
+          
+          const totalTTCLigneAvantRemise = qty * prixTTC;
+          const montantRemise = (totalTTCLigneAvantRemise * discount) / 100;
+          const totalTTCLigneApresRemise = totalTTCLigneAvantRemise - montantRemise;
+          
+          // Rétro-calcul du HT depuis TTC
+          const totalHTLigne = totalTTCLigneApresRemise / (1 + tva / 100);
+          const montantTVA = totalTTCLigneApresRemise - totalHTLigne;
+          
+          totalHTAvantRemise += totalHTLigne;
+          totalHTApresRemise += totalHTLigne;
+          totalTVA += montantTVA;
+          totalTTC += totalTTCLigneApresRemise;
+        });
+      }
     }
     
     // Appliquer la remise globale
     const remiseGlobale = parseFloat(global_discount_percent) || 0;
-    const montantRemiseGlobale = (totalHTApresRemise * remiseGlobale) / 100;
-    totalHTApresRemise = totalHTApresRemise - montantRemiseGlobale;
-    const totalTTC = totalHTApresRemise + totalTVA;
+    if (modeCalcul === 'HT') {
+      const montantRemiseGlobale = (totalHTApresRemise * remiseGlobale) / 100;
+      totalHTApresRemise = totalHTApresRemise - montantRemiseGlobale;
+      // Recalculer la TVA après remise globale
+      totalTVA = 0;
+      items.forEach(item => {
+        const qty = parseFloat(item.quantity) || 0;
+        let prixHT = parseFloat(item.unit_price) || 0;
+        const discount = parseFloat(item.discount_percent) || 0;
+        const tva = parseFloat(item.vat_rate) || 0;
+        const exchangeRate = parseFloat(item.exchange_rate) || 1.0;
+        prixHT = prixHT * exchangeRate;
+        const totalLigneAvantRemise = qty * prixHT;
+        const montantRemise = (totalLigneAvantRemise * discount) / 100;
+        const totalLigneHT = totalLigneAvantRemise - montantRemise;
+        const totalLigneHTApresRemiseGlobale = totalLigneHT * (1 - remiseGlobale / 100);
+        totalTVA += totalLigneHTApresRemiseGlobale * (tva / 100);
+      });
+      totalTTC = totalHTApresRemise + totalTVA;
+    } else {
+      const montantRemiseGlobale = (totalTTC * remiseGlobale) / 100;
+      totalTTC = totalTTC - montantRemiseGlobale;
+      // Recalculer HT et TVA après remise globale
+      const ratioRemise = 1 - (remiseGlobale / 100);
+      totalHTApresRemise = totalHTApresRemise * ratioRemise;
+      totalTVA = totalTVA * ratioRemise;
+    }
     
-    // Mettre à jour le devis (mode_calcul: 'ht' | 'ttc')
-    const modeCalcul = (mode_calcul === 'ht' || mode_calcul === 'ttc') ? mode_calcul : 'ttc';
+    // Mettre à jour le devis
     await client.query(
       `UPDATE quotes SET
         quote_number = COALESCE(NULLIF($1, ''), quote_number),
@@ -1192,20 +1356,19 @@ app.put('/api/quotes/:id', async (req, res) => {
     await client.query('DELETE FROM quote_items WHERE quote_id = $1', [id]);
     
     // Créer les nouvelles lignes de devis
-    // unit_price est TOUJOURS stocké en devise produit ; la conversion sert uniquement au calcul des totaux
     if (items && Array.isArray(items) && items.length > 0) {
       for (const item of items) {
         const qty = parseFloat(item.quantity) || 0;
-        const unitPriceProduct = parseFloat(item.unit_price) || 0;
+        let prixHT = parseFloat(item.unit_price) || 0;
         const discount = parseFloat(item.discount_percent) || 0;
         const tva = parseFloat(item.vat_rate) || 0;
         const exchangeRate = parseFloat(item.exchange_rate) || 1.0;
         const productCurrencyId = item.product_currency_id || null;
         
-        // Convertir le prix dans la devise du devis pour les totaux uniquement
-        const prixHTQuote = unitPriceProduct * exchangeRate;
+        // Convertir le prix dans la devise du devis
+        prixHT = prixHT * exchangeRate;
         
-        const totalLigneAvantRemise = qty * prixHTQuote;
+        const totalLigneAvantRemise = qty * prixHT;
         const montantRemise = (totalLigneAvantRemise * discount) / 100;
         const totalLigneHT = totalLigneAvantRemise - montantRemise;
         const montantTVA = (totalLigneHT * tva) / 100;
@@ -1222,7 +1385,7 @@ app.put('/api/quotes/:id', async (req, res) => {
             item.product_id || null,
             item.product_name || '',
             qty,
-            unitPriceProduct,
+            prixHT,
             tva,
             discount,
             totalLigneHT,
@@ -1292,7 +1455,18 @@ app.delete('/api/quotes/:id', async (req, res) => {
 app.post('/api/quotes/:id/send-email', async (req, res) => {
   try {
     const { id } = req.params;
-    const { recipientEmails, message } = req.body;
+    const { recipientEmails, message, pdfBase64, pdfFileName } = req.body;
+    
+    // Debug minimal sur la présence du PDF
+    try {
+      console.log('send-email payload:', {
+        hasPdf: !!pdfBase64,
+        pdfLength: pdfBase64 ? String(pdfBase64).length : 0,
+        pdfFileName: pdfFileName || null
+      });
+    } catch (e) {
+      // Ne jamais bloquer la route à cause du log
+    }
     
     if (!Array.isArray(recipientEmails) || recipientEmails.length === 0) {
       return res.status(400).json({ error: 'Aucun destinataire fourni' });
@@ -1313,9 +1487,6 @@ app.post('/api/quotes/:id/send-email', async (req, res) => {
     }
     
     const quote = quoteResult.rows[0];
-    const isModeHT = (quote.mode_calcul === 'ht');
-    const remiseGlobalePct = parseFloat(quote.global_discount_percent) || 0;
-    const currencySymbol = quote.currency_symbol || '€';
     
     // Récupérer les lignes de devis
     const itemsResult = await pool.query(
@@ -1335,147 +1506,60 @@ app.post('/api/quotes/:id/send-email', async (req, res) => {
       return res.status(400).json({ error: 'Configuration SMTP incomplète' });
     }
     
-    // Créer le transporteur email à partir de la configuration SMTP en base
+    // Créer le transporteur email à partir de la configuration SMTP stockée
     const transporter = nodemailer.createTransport({
       host: smtpConfig.server,
-      port: parseInt(smtpConfig.port, 10),
-      secure: smtpConfig.secure === 'true',
+      port: parseInt(smtpConfig.port || '587', 10),
+      secure: smtpConfig.secure === 'true' || smtpConfig.port === '465',
       auth: {
         user: smtpConfig.user,
         pass: smtpConfig.password,
       },
       tls: {
-        // On désactive la vérification stricte pour accepter plus de serveurs
+        // Permet d'accepter des certificats auto-signés si nécessaire
         rejectUnauthorized: false
       }
     });
-    
-    // Construire le HTML des lignes du devis (affichage TVA dépendant du mode HT / TTC)
-    let itemsHTML = '';
-    itemsResult.rows.forEach(item => {
-      itemsHTML += `
-        <tr>
-          <td style="padding: 8px; border-bottom: 1px solid #ddd;">${item.product_name || '-'}</td>
-          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${item.quantity}</td>
-          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${Number(item.unit_price).toFixed(2)} ${currencySymbol}</td>
-          ${!isModeHT ? `<td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${item.vat_rate}%</td>` : ''}
-          <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">${Number(item.total_ht).toFixed(2)} ${currencySymbol}</td>
-        </tr>
-      `;
-    });
-    
-    // Construire le bloc des totaux selon le mode de calcul
-    let totalsHTML = '';
-    if (isModeHT) {
-      // total_ht en base = total HT après remise globale
-      const totalHTApresRemise = Number(quote.total_ht || 0);
-      if (remiseGlobalePct > 0) {
-        const totalHTAvantRemiseGlobale = totalHTApresRemise / (1 - remiseGlobalePct / 100);
-        const montantRemiseGlobale = totalHTAvantRemiseGlobale * (remiseGlobalePct / 100);
-        totalsHTML = `
-          <div class="totals" style="margin-top: 20px; text-align: right;">
-            <div style="margin-bottom: 4px;">Total HT: ${totalHTAvantRemiseGlobale.toFixed(2)} ${currencySymbol}</div>
-            <div style="margin-bottom: 4px;">Total remise HT (${remiseGlobalePct}%): -${montantRemiseGlobale.toFixed(2)} ${currencySymbol}</div>
-            <div class="total-ttc" style="font-size: 1.3em; font-weight: bold; margin-top: 10px;">
-              Total HT après remise: ${totalHTApresRemise.toFixed(2)} ${currencySymbol}
-            </div>
-          </div>
-        `;
-      } else {
-        totalsHTML = `
-          <div class="totals" style="margin-top: 20px; text-align: right;">
-            <div class="total-ttc" style="font-size: 1.3em; font-weight: bold; margin-top: 10px;">
-              Total HT: ${totalHTApresRemise.toFixed(2)} ${currencySymbol}
-            </div>
-          </div>
-        `;
-      }
-    } else {
-      totalsHTML = `
-        <div class="totals" style="margin-top: 20px; text-align: right;">
-          <div>Total HT: ${Number(quote.total_ht || 0).toFixed(2)} ${currencySymbol}</div>
-          <div>Total TVA: ${Number(quote.total_vat || 0).toFixed(2)} ${currencySymbol}</div>
-          <div class="total-ttc" style="font-size: 1.3em; font-weight: bold; margin-top: 10px;">
-            Total TTC: ${Number(quote.total_ttc || 0).toFixed(2)} ${currencySymbol}
-          </div>
-        </div>
-      `;
-    }
-    
-    // Message personnalisé (s'il existe)
-    const customMessageHTML = message
-      ? `<p style="margin-bottom: 20px; white-space: pre-line;">${message.replace(/\n/g, '<br>')}</p>`
-      : '';
 
-    const emailHTML = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .header { background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
-          .info { margin-bottom: 15px; }
-          .info strong { display: inline-block; width: 150px; }
-          table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-          th { background-color: #f8f9fa; padding: 12px; text-align: left; border-bottom: 2px solid #ddd; }
-          .totals { margin-top: 20px; text-align: right; }
-          .total-ttc { font-size: 1.5em; font-weight: bold; margin-top: 10px; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>Devis ${quote.quote_number}</h1>
-        </div>
-        
-        ${customMessageHTML}
-        
-        <div class="info">
-          <strong>Client:</strong> ${quote.client_name || '-'}<br>
-          <strong>Date:</strong> ${quote.date ? new Date(quote.date).toLocaleDateString() : '-'}<br>
-          <strong>Valide jusqu'au:</strong> ${quote.valid_until ? new Date(quote.valid_until).toLocaleDateString() : '-'}<br>
-          <strong>Statut:</strong> ${quote.status || 'pending'}
-        </div>
-        
-        <table>
-          <thead>
-            <tr>
-              <th>Produit</th>
-              <th style="text-align: right;">Quantité</th>
-              <th style="text-align: right;">Prix HT</th>
-              ${!isModeHT ? '<th style="text-align: right;">TVA</th>' : ''}
-              <th style="text-align: right;">Total HT</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${itemsHTML}
-          </tbody>
-        </table>
-        
-        ${totalsHTML}
-        
-        ${quote.conditions_generales ? `<div style="margin-top: 30px;"><strong>Conditions Générales:</strong><br>${quote.conditions_generales.replace(/\n/g, '<br>')}</div>` : ''}
-      </body>
-      </html>
-    `;
+    // Corps de l'email : uniquement le message saisi dans le modal
+    const safeMessage = message && typeof message === 'string' ? escapeHtml(message) : '';
+    const emailHTML = safeMessage
+      ? `<p style="white-space: pre-line;">${safeMessage}</p>`
+      : `<p>Veuillez trouver le devis en pièce jointe.</p>`;
     
+    // Préparer la pièce jointe PDF (optionnelle)
+    const attachments = [];
+    if (pdfBase64 && typeof pdfBase64 === 'string') {
+      try {
+        const buffer = Buffer.from(pdfBase64, 'base64');
+
+        // Sécurité : limiter fortement la taille de la pièce jointe pour rester sous les limites des fournisseurs
+        // Gmail impose ~25 Mo pour le message complet (avec encodage base64 + en-têtes).
+        // On fixe donc une limite plus basse (~10 Mo brut). Si le PDF dépasse cette taille,
+        // on envoie l'email SANS pièce jointe plutôt que d'échouer.
+        const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // ~10 Mo
+        if (buffer.length <= MAX_ATTACHMENT_BYTES) {
+          attachments.push({
+            filename: pdfFileName || `Devis-${quote.quote_number}.pdf`,
+            content: buffer,
+            contentType: 'application/pdf'
+          });
+        } else {
+          console.warn(
+            `PDF trop volumineux pour être joint (taille=${buffer.length} octets, limite=${MAX_ATTACHMENT_BYTES}). ` +
+            'Email envoyé sans pièce jointe.'
+          );
+        }
+      } catch (attachError) {
+        console.error('Erreur préparation pièce jointe PDF:', attachError);
+      }
+    }
+
     // Envoyer l'email
     // Adresse de l'utilisateur connecté mise en copie (si configurée dans SMTP)
     const ccAddresses = [];
     if (smtpConfig.cc_current_user && smtpConfig.cc_current_user === 'true' && smtpConfig.current_user_email) {
       ccAddresses.push(smtpConfig.current_user_email);
-    }
-
-    // Texte brut adapté au mode de calcul pour le corps "text" de l'email
-    let textTotals;
-    if (isModeHT) {
-      const totalHTApresRemise = Number(quote.total_ht || 0);
-      textTotals = `Total HT: ${totalHTApresRemise.toFixed(2)} ${currencySymbol}`;
-      if (remiseGlobalePct > 0) {
-        textTotals += ` (après remise globale de ${remiseGlobalePct}%)`;
-      }
-    } else {
-      textTotals = `Total TTC: ${Number(quote.total_ttc || 0).toFixed(2)} ${currencySymbol}`;
     }
 
     const mailOptions = {
@@ -1484,7 +1568,10 @@ app.post('/api/quotes/:id/send-email', async (req, res) => {
       cc: ccAddresses.length > 0 ? ccAddresses.join(',') : undefined,
       subject: `Devis ${quote.quote_number}`,
       html: emailHTML,
-      text: `Devis ${quote.quote_number}\n\nClient: ${quote.client_name || '-'}\nDate: ${quote.date || '-'}\n${textTotals}${message ? `\n\nMessage:\n${message}` : ''}`
+      text: message && typeof message === 'string'
+        ? message
+        : 'Veuillez trouver le devis en pièce jointe.',
+      attachments: attachments.length > 0 ? attachments : undefined
     };
     
     await transporter.sendMail(mailOptions);
@@ -1664,8 +1751,8 @@ app.post('/api/quotes/:id/comments', async (req, res) => {
           if (smtpConfig.server && smtpConfig.port && smtpConfig.user && smtpConfig.password) {
             const transporter = nodemailer.createTransport({
               host: smtpConfig.server,
-              port: parseInt(smtpConfig.port, 10),
-              secure: smtpConfig.secure === 'true',
+              port: parseInt(smtpConfig.port || '587', 10),
+              secure: smtpConfig.secure === 'true' || smtpConfig.port === '465',
               auth: {
                 user: smtpConfig.user,
                 pass: smtpConfig.password,
@@ -2189,42 +2276,65 @@ app.post('/api/config/layout/logo', uploadClientLogo.single('file'), async (req,
   }
 });
 
+// Supprimer le logo de l'entreprise (fichier + URL)
+app.delete('/api/config/layout/logo', async (req, res) => {
+  try {
+    // Récupérer le chemin actuel du logo fichier
+    const result = await pool.query(
+      `SELECT config_value FROM app_config WHERE config_key = 'layout_company_logo_file_path'`
+    );
+    const filePath = result.rows[0]?.config_value;
+
+    if (filePath) {
+      const absolutePath = path.join(__dirname, filePath);
+      try {
+        if (fs.existsSync(absolutePath)) {
+          fs.unlinkSync(absolutePath);
+        }
+      } catch (fsError) {
+        console.error('Erreur suppression fichier logo entreprise:', fsError);
+        // On continue quand même pour nettoyer la config
+      }
+    }
+
+    // Nettoyer les clés de configuration liées au logo
+    await pool.query(
+      `DELETE FROM app_config WHERE config_key IN ('layout_company_logo_file_path', 'layout_company_logo_url')`
+    );
+
+    res.json({ message: 'Logo de l\'entreprise supprimé avec succès' });
+  } catch (error) {
+    console.error('Erreur suppression logo entreprise:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
 // ==================== ROUTES STATISTIQUES ====================
 app.get('/api/stats/dashboard', async (req, res) => {
-  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   try {
     const clients = await pool.query('SELECT COUNT(*) FROM clients');
     const products = await pool.query('SELECT COUNT(*) FROM products');
     const quotes = await pool.query('SELECT COUNT(*) FROM quotes WHERE status = \'pending\'');
-    // Devises configurées (même source que Configuration > Devises) : ordre par nom
-    const configuredCurrencies = await pool.query(
-      'SELECT id, code, name, symbol FROM currencies ORDER BY name'
-    );
-    // CA du mois : uniquement devis ACCEPTÉS, en HT, groupé par devise (uniquement devises présentes dans les devis)
+    // Libellé du mois courant (ex: "janvier 2025")
+    const currentMonthLabelResult = await pool.query(`
+      SELECT TO_CHAR(CURRENT_DATE, 'TMMonth YYYY') AS current_month_label
+    `);
+    // CA du mois (total HT des devis acceptés), ventilé par devise
     const revenueByCurrency = await pool.query(`
       SELECT 
         curr.code as currency_code,
-        COALESCE(curr.symbol, '') as currency_symbol,
+        curr.symbol as currency_symbol,
         COALESCE(SUM(q.total_ht), 0) as total
       FROM quotes q
-      INNER JOIN currencies curr ON q.currency_id = curr.id
+      LEFT JOIN currencies curr ON q.currency_id = curr.id
       WHERE q.status = 'accepted'
         AND EXTRACT(MONTH FROM q.date) = EXTRACT(MONTH FROM CURRENT_DATE)
         AND EXTRACT(YEAR FROM q.date) = EXTRACT(YEAR FROM CURRENT_DATE)
-      GROUP BY curr.id, curr.code, curr.symbol
+      GROUP BY curr.code, curr.symbol
+      ORDER BY curr.code
     `);
-    const revenueMap = {};
-    revenueByCurrency.rows.forEach(row => {
-      revenueMap[row.currency_code] = parseFloat(row.total);
-    });
-    // Une entrée CA HT par devise configurée (0 si aucun devis accepté dans cette devise ce mois)
-    const revenue_by_currency = configuredCurrencies.rows.map(c => ({
-      currency_code: c.code,
-      currency_symbol: (c.symbol ?? '').trim(),
-      total: revenueMap[c.code] ?? 0
-    }));
-
-    // Statistiques par statut et par devise pour le dernier mois (30 derniers jours), montants en HT
+    
+    // Statistiques par statut et par devise pour le dernier mois (30 derniers jours)
     const quotesByStatus = await pool.query(`
       SELECT 
         q.status,
@@ -2239,13 +2349,16 @@ app.get('/api/stats/dashboard', async (req, res) => {
       ORDER BY q.status, curr.code
     `);
     
-    // Indicateur : si revenue_by_currency a une entrée par devise configurée (5 devises = 5 cartes sur le dashboard)
-    res.set('X-Dashboard-Currencies', 'all-configured');
     res.json({
       clients: parseInt(clients.rows[0].count),
       products: parseInt(products.rows[0].count),
       quotes_pending: parseInt(quotes.rows[0].count),
-      revenue_by_currency,
+      revenue_by_currency: revenueByCurrency.rows.map(row => ({
+        currency_code: row.currency_code || 'EUR',
+        currency_symbol: row.currency_symbol || '€',
+        total: parseFloat(row.total)
+      })),
+      current_month_label: (currentMonthLabelResult.rows[0]?.current_month_label || '').trim(),
       quotes_by_status: quotesByStatus.rows.map(row => ({
         status: row.status,
         currency_code: row.currency_code || 'EUR',

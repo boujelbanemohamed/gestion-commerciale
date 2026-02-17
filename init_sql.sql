@@ -99,7 +99,7 @@ CREATE TABLE IF NOT EXISTS quotes (
     currency_id INTEGER REFERENCES currencies(id) ON DELETE SET NULL,
     conditions_generales TEXT,
     global_discount_percent DECIMAL(5,2) DEFAULT 0,
-    mode_calcul VARCHAR(10) DEFAULT 'ttc',
+    mode_calcul VARCHAR(3) DEFAULT 'HT' CHECK (mode_calcul IN ('HT', 'TTC')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
