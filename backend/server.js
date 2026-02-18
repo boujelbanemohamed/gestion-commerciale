@@ -1764,7 +1764,7 @@ app.post('/api/quotes/:id/comments', async (req, res) => {
             
             const userInfo = await pool.query('SELECT name FROM users WHERE id = $1', [userId]);
             const userName = userInfo.rows[0]?.name || 'Un utilisateur';
-            
+
             await transporter.sendMail({
               from: `"${smtpConfig.sender_name || 'Gestion Commerciale'}" <${smtpConfig.sender_email || smtpConfig.user}>`,
               to: assignedUser.rows[0].email,
@@ -1775,9 +1775,8 @@ app.post('/api/quotes/:id/comments', async (req, res) => {
                 <p>${userName} vous a assigné un commentaire sur le devis <strong>${quoteInfo.rows[0].quote_number}</strong>.</p>
                 <p><strong>Commentaire :</strong></p>
                 <p>${comment}</p>
-                <p><a href="${process.env.FRONTEND_URL || 'http://localhost:3001'}/quotes/${id}">Ouvrir le devis dans l'application</a></p>
               `,
-              text: `Bonjour ${assignedUser.rows[0].name},\n\n${userName} vous a assigné un commentaire sur le devis ${quoteInfo.rows[0].quote_number}.\n\nCommentaire : ${comment}\n\nLien : ${process.env.FRONTEND_URL || 'http://localhost:3001'}/quotes/${id}`
+              text: `Bonjour ${assignedUser.rows[0].name},\n\n${userName} vous a assigné un commentaire sur le devis ${quoteInfo.rows[0].quote_number}.\n\nCommentaire : ${comment}`
             });
           }
         } catch (emailError) {
