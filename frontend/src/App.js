@@ -383,6 +383,27 @@ function LoginPage({ onLogin }) {
   const [password, setPassword] = useState('admin123');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [companyLogoUrl, setCompanyLogoUrl] = useState(null);
+
+  useEffect(() => {
+    const loadLayoutLogo = async () => {
+      try {
+        const layout = await api.get('/config/layout');
+        if (layout && Object.keys(layout).length > 0) {
+          if (layout.logo_url) {
+            setCompanyLogoUrl(layout.logo_url);
+          } else if (layout.logo_file_path) {
+            const relativePath = layout.logo_file_path.replace(/^uploads[\\/]/, '');
+            setCompanyLogoUrl(`/uploads/${relativePath}`);
+          }
+        }
+      } catch (error) {
+        console.error('Erreur chargement logo connexion:', error);
+      }
+    };
+
+    loadLayoutLogo();
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -404,8 +425,17 @@ function LoginPage({ onLogin }) {
       <div className="max-w-md w-full bg-white p-8 rounded-xl shadow-lg">
         <div className="text-center mb-8">
           <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-2xl">👥</span>
+            {companyLogoUrl ? (
+              <img
+                src={companyLogoUrl}
+                alt="Logo de l'entreprise"
+                className="w-10 h-10 object-contain"
+              />
+            ) : (
+              <span className="text-2xl">👥</span>
+            )}
           </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Gestion commercial</h1>
           <h2 className="text-3xl font-bold text-gray-900">Bienvenue</h2>
           <p className="text-gray-500 mt-2">Connectez-vous à votre compte</p>
         </div>
