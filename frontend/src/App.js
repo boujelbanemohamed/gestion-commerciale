@@ -5193,6 +5193,44 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
               return null;
             })();
 
+            const hasCompanyLogo = !!companyLogoUrl;
+            const hasClientLogo = !!clientLogoUrl;
+            const bothLogos = hasCompanyLogo && hasClientLogo;
+
+            const dualLogoContainerStyle = {
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '40px'
+            };
+
+            const singleLogoWrapperStyle = {
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginBottom: '40px'
+            };
+
+            const dualLogoWrapperStyle = {
+              width: '130px',
+              height: '65px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            };
+
+            const dualLogoImageStyle = {
+              maxWidth: '130px',
+              maxHeight: '65px',
+              objectFit: 'contain'
+            };
+
+            const singleLogoImageStyle = {
+              maxWidth: '160px',
+              maxHeight: '80px',
+              objectFit: 'contain'
+            };
+
             const currentUser = userWithSignature || user;
             const signatureImageUrl = (() => {
               if (currentUser?.signature_link) {
@@ -5274,26 +5312,33 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                     }}
                   >
                     {/* En-tête avec logos */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
-                      <div style={{ height: '200px', display: 'flex', alignItems: 'center' }}>
-                        {companyLogoUrl && (
+                    {bothLogos && (
+                      <div style={dualLogoContainerStyle}>
+                        <div style={dualLogoWrapperStyle}>
                           <img
                             src={companyLogoUrl}
                             alt="Logo entreprise"
-                            style={{ height: '200px', objectFit: 'contain' }}
+                            style={dualLogoImageStyle}
                           />
-                        )}
-                      </div>
-                      <div style={{ height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                        {clientLogoUrl && (
+                        </div>
+                        <div style={dualLogoWrapperStyle}>
                           <img
                             src={clientLogoUrl}
                             alt="Logo client"
-                            style={{ height: '200px', objectFit: 'contain' }}
+                            style={dualLogoImageStyle}
                           />
-                        )}
+                        </div>
                       </div>
-                    </div>
+                    )}
+                    {!bothLogos && (hasCompanyLogo || hasClientLogo) && (
+                      <div style={singleLogoWrapperStyle}>
+                        <img
+                          src={companyLogoUrl || clientLogoUrl}
+                          alt={companyLogoUrl ? 'Logo entreprise' : 'Logo client'}
+                          style={singleLogoImageStyle}
+                        />
+                      </div>
+                    )}
 
                     {/* Date */}
                     <p style={{ textAlign: 'right', fontSize: '14px', color: '#4b5563', marginBottom: '0px' }}>
