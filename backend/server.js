@@ -1775,9 +1775,9 @@ app.post('/api/quotes/:id/comments', async (req, res) => {
                 <p>${userName} vous a assigné un commentaire sur le devis <strong>${quoteInfo.rows[0].quote_number}</strong>.</p>
                 <p><strong>Commentaire :</strong></p>
                 <p>${comment}</p>
-                <p><a href="${process.env.FRONTEND_URL || 'http://localhost:3001'}/quotes/${id}">Voir le devis</a></p>
+                <p><a href="${process.env.FRONTEND_URL || 'http://localhost:3001'}/quotes/${id}">Ouvrir le devis dans l'application</a></p>
               `,
-              text: `Bonjour ${assignedUser.rows[0].name},\n\n${userName} vous a assigné un commentaire sur le devis ${quoteInfo.rows[0].quote_number}.\n\nCommentaire : ${comment}\n\nVoir le devis : ${process.env.FRONTEND_URL || 'http://localhost:3001'}/quotes/${id}`
+              text: `Bonjour ${assignedUser.rows[0].name},\n\n${userName} vous a assigné un commentaire sur le devis ${quoteInfo.rows[0].quote_number}.\n\nCommentaire : ${comment}\n\nLien : ${process.env.FRONTEND_URL || 'http://localhost:3001'}/quotes/${id}`
             });
           }
         } catch (emailError) {
