@@ -1,6 +1,6 @@
 #!/bin/bash
 # Script de mise à jour de l'application sur le serveur (Red Hat ou autre).
-# À exécuter dans le répertoire du projet (ex: /opt/gestion-commerciale).
+# À exécuter dans le répertoire du projet : cd /data/applications/gestion-commerciale && ./update_serveur.sh
 # Usage: ./update_serveur.sh
 
 set -e
@@ -17,18 +17,18 @@ git pull origin main
 
 # 2. Reconstruire les images Docker (sans cache pour prendre le nouveau code)
 echo "🔨 Reconstruction des images..."
-docker-compose build --no-cache
+docker compose build --no-cache
 
 # 3. Redémarrer les services
 echo "♻️ Redémarrage des services..."
-docker-compose down
-docker-compose up -d
+docker compose down
+docker compose up -d
 
 # 4. Vérifier le statut
 echo "⏳ Attente du démarrage (15 s)..."
 sleep 15
 echo "✅ Statut des conteneurs :"
-docker-compose ps
+docker compose ps
 
 echo ""
 echo "✨ Mise à jour terminée."

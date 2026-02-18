@@ -3886,6 +3886,8 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
   const [filterDateTo, setFilterDateTo] = useState('');
   const [editingQuote, setEditingQuote] = useState(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [pendingPrintPdfAfterView, setPendingPrintPdfAfterView] = useState(false);
+  const [pendingEmailFromList, setPendingEmailFromList] = useState(false);
   const [recipientEmails, setRecipientEmails] = useState([]); // liste d'emails sélectionnés
   const [emailInputMode, setEmailInputMode] = useState('select'); // 'select' ou 'manual'
   const [manualEmailInput, setManualEmailInput] = useState(''); // champ de saisie libre (peut contenir plusieurs emails séparés par ;)
@@ -4118,6 +4120,43 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
       alert('Erreur lors du chargement des détails du devis');
     }
   };
+
+  // Depuis la liste : ouvrir le détail puis déclencher l'impression PDF après rendu
+  const handlePrintPdfFromList = (quoteId) => {
+    setPendingPrintPdfAfterView(true);
+    handleViewQuote(quoteId);
+  };
+
+  // Depuis la liste : ouvrir le détail puis ouvrir le modal d'envoi par email
+  const handleSendEmailFromList = (quoteId) => {
+    setPendingEmailFromList(true);
+    handleViewQuote(quoteId);
+  };
+
+  // Une fois le détail affiché, déclencher l'impression PDF si demandé depuis la liste
+  useEffect(() => {
+    if (!showDetailPage || !selectedQuote || !pendingPrintPdfAfterView) return;
+    const t = setTimeout(() => {
+      setPendingPrintPdfAfterView(false);
+      handlePrintPDF().catch(() => {});
+    }, 800);
+    return () => clearTimeout(t);
+  }, [showDetailPage, selectedQuote, pendingPrintPdfAfterView]);
+
+  // Une fois le détail affiché, ouvrir le modal email si demandé depuis la liste
+  useEffect(() => {
+    if (!showDetailPage || !selectedQuote || !pendingEmailFromList) return;
+    setPendingEmailFromList(false);
+    const availableEmails = getAvailableEmails();
+    if (availableEmails.length > 0) {
+      setRecipientEmails([availableEmails[0].value]);
+      setEmailInputMode('select');
+    } else {
+      setRecipientEmails([]);
+      setEmailInputMode('manual');
+    }
+    setShowEmailModal(true);
+  }, [showDetailPage, selectedQuote, pendingEmailFromList]);
 
   const handleCreateComment = async (e) => {
     e.preventDefault();
@@ -6821,13 +6860,27 @@ function QuotesPage({ user, quoteToOpen, onQuoteOpened }) {
                         {getStatusLabel(quote.status || 'pending')}
                       </span>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium space-x-3">
+                    <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium space-x-2">
                       <button 
                         onClick={() => handleViewQuote(quote.id)}
                         className="text-blue-600 hover:text-blue-800 dark:text-blue-400"
                         title="Voir les détails"
                       >
                         👁️
+                      </button>
+                      <button 
+                        onClick={() => handlePrintPdfFromList(quote.id)}
+                        className="text-gray-600 hover:text-gray-800 dark:text-gray-400"
+                        title="Imprimer en PDF"
+                      >
+                        🖨️
+                      </button>
+                      <button 
+                        onClick={() => handleSendEmailFromList(quote.id)}
+                        className="text-green-600 hover:text-green-800 dark:text-green-400"
+                        title="Envoyer par mail"
+                      >
+                        📧
                       </button>
                       <button 
                         onClick={() => handleEditQuote(quote.id)}
